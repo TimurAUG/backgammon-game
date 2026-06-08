@@ -71,7 +71,30 @@ type Point uint8
 //
 // TDD plan #3, #4.
 func NextPoint(c Color, from Point, pip uint8) Point {
-	// Минимальная реализация для #3, #4: простое вычитание.
-	// Wrap-через-границу для чёрных и выкид — добавим в #5, #6.
-	return Point(uint8(from) - pip)
+	switch c {
+	case White:
+		// Белый: 24 → 1 → выкид. Если from <= pip, шашка уходит за дом.
+		if uint8(from) <= pip {
+			return 0
+		}
+		return Point(uint8(from) - pip)
+
+	case Black:
+		// Чёрный: путь 12 → 1 → 24 → 13 → выкид.
+		if from >= 13 {
+			// Верхняя половина — финальный отрезок к 13 и выкид.
+			next := uint8(from) - pip // pip ≤ 6, from ≥ 13: безопасно
+			if next < 13 {
+				return 0 // выкид (точный или переборный)
+			}
+			return Point(next)
+		}
+		// Нижняя половина 1..12 — может пересечь границу 1↔24.
+		if uint8(from) > pip {
+			return Point(uint8(from) - pip)
+		}
+		// Wrap через границу: from + 24 - pip.
+		return Point(uint8(from) + 24 - pip)
+	}
+	return 0
 }
