@@ -46,6 +46,13 @@ func InitialBoard() Board {
 //
 // TDD plan #2.
 func (b Board) CountByColor() (white, black uint8) {
-	// Заглушка для red-стадии: тест #2 должен упасть.
-	return 0, 0
+	for _, v := range b {
+		switch {
+		case v > 0:
+			white += uint8(v)
+		case v < 0:
+			black += uint8(-v)
+		}
+	}
+	return
 }
