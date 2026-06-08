@@ -32,6 +32,8 @@ type Board [24]int8
 //
 // TDD plan #1.
 func InitialBoard() Board {
-	// Заглушка для red-стадии: тест #1 должен упасть.
-	return Board{}
+	var b Board
+	b[23] = 15  // 15 белых на пункте 24 (голова белых)
+	b[11] = -15 // 15 чёрных на пункте 12 (голова чёрных)
+	return b
 }
