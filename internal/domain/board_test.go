@@ -60,3 +60,28 @@ func TestNextPoint_SimpleForward(t *testing.T) {
 		})
 	}
 }
+
+// TestNextPoint_WrapAndBearOff покрывает два краевых случая:
+//   - пересечение границы 1↔24 при движении чёрного из нижней половины;
+//   - выкид (возврат 0), когда шаг уводит шашку за дом.
+//
+// TDD plan #5, #6.
+func TestNextPoint_WrapAndBearOff(t *testing.T) {
+	cases := []struct {
+		name  string
+		color Color
+		from  Point
+		pip   uint8
+		want  Point
+	}{
+		{"чёрный: 5 пипсом 6 пересекает 1→24 → 23", Black, 5, 6, 23}, // #5
+		{"белый: 3 пипсом 6 — выкид (переборный)", White, 3, 6, 0},   // #6
+		{"белый: 6 пипсом 6 — выкид (точный)", White, 6, 6, 0},       // #6
+		{"чёрный: 13 пипсом 1 — выкид из дома", Black, 13, 1, 0},     // #6
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, NextPoint(tc.color, tc.from, tc.pip))
+		})
+	}
+}
