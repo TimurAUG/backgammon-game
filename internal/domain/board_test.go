@@ -38,3 +38,25 @@ func TestInitialBoard_CheckerCount(t *testing.T) {
 	require.Equal(t, uint8(15), white, "должно быть 15 белых шашек, получено %d", white)
 	require.Equal(t, uint8(15), black, "должно быть 15 чёрных шашек, получено %d", black)
 }
+
+// TestNextPoint_SimpleForward проверяет простое движение вперёд для обоих
+// цветов с головы — без пересечения границы 1↔24 и без выкида.
+//
+// TDD plan #3, #4.
+func TestNextPoint_SimpleForward(t *testing.T) {
+	cases := []struct {
+		name  string
+		color Color
+		from  Point
+		pip   uint8
+		want  Point
+	}{
+		{"белый: с головы 24 пипсом 6 → 18", White, 24, 6, 18}, // #3
+		{"чёрный: с головы 12 пипсом 6 → 6", Black, 12, 6, 6},  // #4
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, NextPoint(tc.color, tc.from, tc.pip))
+		})
+	}
+}
