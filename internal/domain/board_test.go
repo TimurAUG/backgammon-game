@@ -27,3 +27,14 @@ func TestInitialBoard_StartingPosition(t *testing.T) {
 		require.Equalf(t, int8(0), b[i], "пункт %d должен быть пуст, получено %d", i+1, b[i])
 	}
 }
+
+// TestInitialBoard_CheckerCount проверяет инвариант: на стартовой доске
+// ровно 15 белых и 15 чёрных шашек.
+//
+// TDD plan #2.
+func TestInitialBoard_CheckerCount(t *testing.T) {
+	b := InitialBoard()
+	white, black := b.CountByColor()
+	require.Equal(t, uint8(15), white, "должно быть 15 белых шашек, получено %d", white)
+	require.Equal(t, uint8(15), black, "должно быть 15 чёрных шашек, получено %d", black)
+}
