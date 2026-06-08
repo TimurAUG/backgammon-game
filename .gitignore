@@ -1,0 +1,30 @@
+# Go build
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go module cache (when vendored)
+/vendor/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+
+# Local DB / state
+*.sqlite
+*.db
