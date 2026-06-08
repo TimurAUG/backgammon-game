@@ -71,6 +71,7 @@ type Point uint8
 //
 // TDD plan #3, #4.
 func NextPoint(c Color, from Point, pip uint8) Point {
-	// Заглушка для red-стадии: тесты #3, #4 должны упасть.
-	return 0
+	// Минимальная реализация для #3, #4: простое вычитание.
+	// Wrap-через-границу для чёрных и выкид — добавим в #5, #6.
+	return Point(uint8(from) - pip)
 }
