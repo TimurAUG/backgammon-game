@@ -414,25 +414,30 @@ func statusString(s domain.GameStatus) string {
 	}
 }
 
-// Manager хранит активные игры в памяти. Безопасен для одновременного
-// доступа из горутин WS-handler'а.
+// Manager хранит активные игры через Storage и генерирует броски кубиков
+// через rng. Безопасен для одновременного доступа из горутин WS-handler'а.
 type Manager struct {
-	mu    sync.Mutex
-	games map[string]*Game
-	rng   io.Reader
+	storage Storage
+	rng     io.Reader
 }
 
-// NewManager создаёт пустой менеджер с crypto/rand в качестве источника
-// случайности для бросков.
+// NewManager создаёт менеджер с in-memory Storage и crypto/rand в качестве
+// источника случайности.
 func NewManager() *Manager {
-	return &Manager{games: map[string]*Game{}, rng: crand.Reader}
+	return &Manager{storage: NewMemoryStorage(), rng: crand.Reader}
 }
 
-// NewManagerWithRand — конструктор для тестов: фиксированный io.Reader
-// (bytes.Reader с заранее подготовленными байтами) делает броски
-// детерминированными.
+// NewManagerWithRand — конструктор для тестов с фиксированным rng
+// (bytes.Reader с заранее подготовленными байтами). Использует in-memory
+// Storage.
 func NewManagerWithRand(rng io.Reader) *Manager {
-	return &Manager{games: map[string]*Game{}, rng: rng}
+	return &Manager{storage: NewMemoryStorage(), rng: rng}
+}
+
+// NewManagerWithStorage позволяет подключить произвольный Storage —
+// например, Postgres (#36). Источник случайности задаётся отдельно.
+func NewManagerWithStorage(storage Storage, rng io.Reader) *Manager {
+	return &Manager{storage: storage, rng: rng}
 }
 
 // JoinGame регистрирует соединение conn в игре с id.
@@ -450,8 +455,7 @@ func NewManagerWithRand(rng io.Reader) *Manager {
 // При token == "" реконнект невозможен (на сервере нет способа отличить
 // одного клиента от другого).
 func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, error) {
-	m.mu.Lock()
-	g, ok := m.games[id]
+	g, ok := m.storage.LoadGame(id)
 	if !ok {
 		g = &Game{
 			ID: id,
@@ -463,9 +467,8 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 			},
 			rng: m.rng,
 		}
-		m.games[id] = g
+		_ = m.storage.SaveGame(g)
 	}
-	m.mu.Unlock()
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
