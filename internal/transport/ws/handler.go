@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/TimurAUG/backgammon-game/internal/game"
@@ -34,7 +35,16 @@ func NewHandler(mgr *game.Manager) *Handler {
 
 // ServeHTTP принимает WS-соединение, читает первое сообщение JOIN, регистрирует
 // клиента в игре и держит соединение в read-loop до закрытия.
+//
+// Авторизация: токен берётся из Authorization: Bearer-заголовка handshake-запроса.
+// Если токена нет — отвечаем 401 без upgrade.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	token := extractBearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		http.Error(w, "missing or invalid Authorization header", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -59,7 +69,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	color, g, err := h.mgr.JoinGame(msg.GameID, msg.Token, pc)
+	color, g, err := h.mgr.JoinGame(msg.GameID, token, pc)
 	if err != nil {
 		code := "INVALID_STATE"
 		if errors.Is(err, game.ErrRoomFull) {
@@ -131,6 +141,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+}
+
+// extractBearerToken вытаскивает токен из строки "Bearer <token>".
+// Пробелы по краям токена обрезаются. Если префикс не совпал — пустая строка.
+func extractBearerToken(authHeader string) string {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(authHeader, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(authHeader, prefix))
 }
 
 // playerConn — реализация game.Conn поверх *websocket.Conn. Сериализация

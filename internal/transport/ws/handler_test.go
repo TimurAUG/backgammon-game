@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +18,11 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
+
+// dialCounter гарантирует уникальный token при каждом вызове dialAndJoin —
+// иначе два клиента в одной игре получали бы одинаковый token и второй
+// случайно реконнектился бы вместо подключения как соперник.
+var dialCounter atomic.Int32
 
 // TestHandler_JoinReturnsState — интеграционный тест на минимальный поток:
 //   1. Клиент открывает WS-соединение.
@@ -95,7 +102,8 @@ func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 // Используется в тестах, где нужны два разных игрока.
 func dialAndJoin(t *testing.T, ctx context.Context, wsURL, gameID string) *websocket.Conn {
 	t.Helper()
-	return dialAndJoinWithToken(t, ctx, wsURL, gameID, "tok-"+t.Name()+"-"+gameID)
+	n := dialCounter.Add(1)
+	return dialAndJoinWithToken(t, ctx, wsURL, gameID, "tok-"+strconv.Itoa(int(n))+"-"+gameID)
 }
 
 func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) protocol.ServerMessage {
