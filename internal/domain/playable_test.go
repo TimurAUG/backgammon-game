@@ -153,6 +153,30 @@ func TestLegalMoves(t *testing.T) {
 			want: []Move{},
 		},
 		{
+			name: "lookahead: ход 13→12 неизбежно создаёт финальный блок 6 (соперник 0 в доме) — отфильтрован",
+			setup: func() GameState {
+				var b Board
+				b[6], b[7], b[8], b[9], b[10] = 1, 1, 1, 1, 1 // белые 7..11
+				b[12] = 1                                       // белая на 13
+				return GameState{
+					Board:       b,
+					Turn:        White,
+					Dice:        Dice{Remaining: []uint8{1}},
+					IsFirstMove: [2]bool{false, false},
+				}
+			},
+			// 13→12 после Apply: блок 7..12 = 6 подряд. Remaining пуст → final.
+			// Чёрных в 13..18 нет → SixBlockAllowed=false → нелегально.
+			// Остальные ходы рассеивают блок.
+			want: []Move{
+				{From: 7, To: 6, Pip: 1},
+				{From: 8, To: 7, Pip: 1},
+				{From: 9, To: 8, Pip: 1},
+				{From: 10, To: 9, Pip: 1},
+				{From: 11, To: 10, Pip: 1},
+			},
+		},
+		{
 			name: "исключение головы 6:6 на первом ходу: 14 белых на 24 + 1 на 18, HeadConsumed=1, [6,6,6,6] → 24→18 и 18→12",
 			setup: func() GameState {
 				var b Board
