@@ -5,7 +5,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test } from 'vitest'
 
-import { loadCredentials, type Credentials } from './lib/credentials'
+import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetGameState } from './stores/game.svelte'
 import { WSClient, type WSConnectionCtor } from './transport/ws'
 import { MockWebSocket } from '../tests/mockWebSocket'
@@ -98,5 +98,28 @@ describe('App new game (#24b)', () => {
 
     expect(screen.getByLabelText('ID игры')).toBeInTheDocument()
     expect(loadCredentials()).toBeNull()
+  })
+})
+
+describe('App auto-connect (#24c)', () => {
+  test('App_savedCreds_autoConnectsToGameSkippingConnect', () => {
+    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ID игры')).toBeNull()
+    expect(MockWebSocket.instances).toHaveLength(1)
+  })
+
+  test('App_savedCreds_joinsWithSavedCreds', () => {
+    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    MockWebSocket.last().acceptOpen()
+
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-saved', token: 'tok-saved' }),
+    )
   })
 })
