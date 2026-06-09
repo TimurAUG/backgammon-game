@@ -94,4 +94,17 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 
 	_, missing := storage.LoadGame("nope")
 	require.False(t, missing, "несуществующая игра — ok=false")
+
+	// auto-save: новая партия после JoinGame должна попадать в БД без явного
+	// SaveGame от вызывающего.
+	autoMgr := game.NewManagerWithStorage(storage, nil)
+	autoConn := &mockConn{}
+	_, _, err = autoMgr.JoinGame("g-auto", "auto-tok", autoConn)
+	require.NoError(t, err)
+
+	autoLoaded, ok := storage.LoadGame("g-auto")
+	require.True(t, ok, "JoinGame должен auto-save игру в Storage")
+	require.Equal(t, [2]string{"auto-tok", ""}, autoLoaded.Tokens())
+	require.Equal(t, int8(15), autoLoaded.State.Board[23],
+		"начальная доска: 15 белых на пункте 24")
 }
