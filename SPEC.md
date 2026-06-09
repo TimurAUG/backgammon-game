@@ -212,12 +212,12 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 - ✅ Этап 3 (#7–#10): простой ход
 - ✅ Этап 4 (#11–#12): дубль
 - ✅ Этап 5 (#13–#17): правило головы
-- ⏳ **Этап 6 (#18–#20): правило шести** — #18–#19 закрыты (`SixBlockAllowed`); #20 откладывается до этапа 11 (END_TURN на уровне транспорта — там `SixBlockAllowed` будет вызван только на финальной позиции)
+- ✅ Этап 6 (#18–#20): правило шести — `SixBlockAllowed` в домене; #20 закрыт интеграционно в `game.Game.EndTurn` (правило проверяется только на финальной позиции, между шагами Apply его не зовёт)
 - ✅ Этап 7 (#21–#24): дом и сброс (`AllInHome`, `IsLegalBearOff` с точным и переборным пипсом; #24 покрыто существующим `IsLegalStep`)
 - ✅ Этап 8 (#25–#28): конец игры (`WinKind`, `Winner` с разделением Oin/Mars/Koks)
 - ✅ Этап 9 (#29–#30): обязательные ходы (`CanUsePip` — база для приоритета бо́льшего и перехода хода)
 - ✅ Этап 10 (#31–#32): оркестрация (`GameState`, `Apply` обновляет `Remaining` через `Dice.Use`, `IsTurnComplete` через `CanUsePip`)
-- ⏳ **Этап 11 (#33–#37): транспорт и сессии** — #33 закрыт (`protocol`, `game.Manager`, `transport/ws.Handler` с JOIN→STATE на одном клиенте)
+- ⏳ **Этап 11 (#33–#37): транспорт и сессии** — #33 (JOIN), часть #34 закрыты: OPPONENT_JOINED, ROLL_FOR_FIRST, LEGAL_MOVES, MOVE, END_TURN с MUST_USE_PIP и RULE_OF_SIX. Остаются: ROLL, GAME_OVER, auto-END_TURN, #35–#37
 
 
 ### Этап 1 — доска и расстановка
