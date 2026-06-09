@@ -179,7 +179,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 Раздел заполняется по ходу работы. Маркируем закрытые этапы галочкой.
 
 - ✅ Этап 0 — каркас (`/web/` собран на Vite 6 + Svelte 5 + TS 5 + Vitest 3; smoke-тест `App.test.ts` зелёный, `npm run check`/`lint`/`build` без ошибок).
-- ⬜ Этап 1 — типы протокола
+- ✅ Этап 1 — типы протокола (`web/src/protocol/messages.ts`: discriminated unions `ClientMessage` и `ServerMessage`, `serializeClientMessage` + `parseServerMessage`; 17 тестов).
 - ⬜ Этап 2 — WSClient
 - ⬜ Этап 3 — gameStore
 - ⬜ Этап 4 — геометрия и доска
@@ -191,6 +191,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 ## 9. Открытые вопросы
 
 1. ~~**STATE неполный на бекенде.**~~ ✅ **Закрыто.** `ServerMessage` получил `BorneOffPayload` и `IsFirstMovePayload`; `game.StateMessage` заполняет оба поля из доменного состояния. Этап 3 фронта (gameStore) разблокирован.
+2. **`ROOM_FULL` не задокументирован в `nardy-protocol`.** Бекенд реально шлёт его (`internal/transport/ws/handler.go:76` при отказе третьему клиенту), но в скилле этот код не упомянут. Поправить отдельным docs-циклом: добавить `ROOM_FULL` в таблицу кодов ошибок в `nardy-protocol/SKILL.md`, после — расширить `ErrorCode` в `web/src/protocol/messages.ts`.
 2. **REST для invite-флоу.** Сейчас `gameId` и `token` вводятся вручную в Connect. Когда появится REST (создание игры, генерация приглашения) — Connect заменится на «Создать игру» / «Войти по ссылке».
 3. **Drag&drop.** В MVP не входит — только клики. Решить, делать ли HTML5 drag, pointer events или библиотеку, когда возьмём цикл.
 4. **i18n.** Пока — только русский, без обёрток. Когда добавим английский — ввести `t()` и каталоги.
