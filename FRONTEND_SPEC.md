@@ -186,7 +186,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 5 — кубики (`web/src/components/Dice.svelte`: рендер двух кубиков и `remaining`; `dice: Dice | null` → пусто при null; 7 тестов).
 - ✅ Этап 6 — действия игрока (`ActionBar.svelte` с 4 кнопками ROLL_FOR_FIRST/ROLL/END_TURN/RESIGN — 9 тестов; `Board.svelte` расширен опциональными legalMoves/myColor/onMove + локальный selectedFrom-стейт + подсветка `selected`/`legal-target` — 10 новых тестов клик-режима).
 - ✅ Этап 7 — конец игры (`GameOver.svelte` модалка с локализацией Белые/Чёрные + Оин/Марс/Кокс; «Вы победили»/«Вы проиграли» при наличии myColor; кнопка «Новая игра» → onNewGame; 10 тестов).
-- ⬜ Этап 8 — Connect и реконнект
+- ✅ Этап 8 — Connect и реконнект (`Connect.svelte` форма+localStorage; `App.svelte` — маршрутизация Connect↔Game, проводка WSClient, авто-подключение из localStorage, `ERROR{UNAUTHORIZED}` → чистка кредов и возврат в Connect; стор `connection.svelte.ts` + `WSClient.onStateChange` (connecting/connected/reconnecting) + `ActionBar.disabled` → `reconnecting` блокирует ActionBar; весь набор — 137 тестов).
 
 ## 9. Открытые вопросы
 
