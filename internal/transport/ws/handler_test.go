@@ -277,13 +277,16 @@ func TestHandler_EndTurn_RejectsWithPipsLeft(t *testing.T) {
 	require.Equal(t, "MUST_USE_PIP", msg.Code)
 }
 
-// TestHandler_EndTurn_PassesTurn — после исчерпания всех легальных ходов
-// (MOVE 24→19, MOVE 19→16) END_TURN передаёт ход чёрному. STATE обоим:
-// turn=black, status=waitingForRoll, Dice пустой, IsFirstMove[White] = false
-// (нет отдельного поля в STATE, но HeadConsumed обнулён).
+// TestHandler_AutoEndTurnOnEmptyLegalMoves — после исчерпания всех
+// легальных ходов сервер автоматически передаёт ход сопернику. Клиент
+// не должен слать END_TURN явно.
 //
-// TDD plan #34 (часть 5b).
-func TestHandler_EndTurn_PassesTurn(t *testing.T) {
+// Сценарий: MOVE 24→19, MOVE 19→16. После второго MOVE LegalMoves пуст,
+// поэтому вместо LEGAL_MOVES сервер шлёт второй STATE с turn=black,
+// status=waitingForRoll.
+//
+// TDD plan #34 (часть 5b + 9 — auto-END_TURN).
+func TestHandler_AutoEndTurnOnEmptyLegalMoves(t *testing.T) {
 	rng := bytes.NewReader([]byte{4, 2})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
@@ -297,25 +300,21 @@ func TestHandler_EndTurn_PassesTurn(t *testing.T) {
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 
-	// Второй ход белого: 19→16 пипсом 3 (используем последний пипс).
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 19, To: 16})
 	require.NoError(t, err)
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
-	_ = readMessage(t, ctx, conn1) // STATE
-	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES (пустой)
+	_ = readMessage(t, ctx, conn1) // STATE после Apply
+	_ = readMessage(t, ctx, conn2) // STATE после Apply
 
-	et, err := json.Marshal(protocol.ClientMessage{Type: "END_TURN"})
-	require.NoError(t, err)
-	require.NoError(t, conn1.Write(ctx, websocket.MessageText, et))
-
+	// LegalMoves пуст → auto-END_TURN: ещё один STATE с переключённым Turn,
+	// без LEGAL_MOVES между ними.
 	state1 := readMessage(t, ctx, conn1)
 	state2 := readMessage(t, ctx, conn2)
 	for _, s := range []protocol.ServerMessage{state1, state2} {
 		require.Equal(t, "STATE", s.Type)
 		require.Equal(t, "black", s.Turn)
 		require.Equal(t, "waitingForRoll", s.Status)
-		require.Nil(t, s.Dice, "Dice должен быть сброшен после END_TURN")
+		require.Nil(t, s.Dice, "Dice должен быть сброшен после auto-END_TURN")
 	}
 }
 
@@ -340,19 +339,15 @@ func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 
-	// Завершить ход белого: MOVE 19→16 пипсом 3 + END_TURN.
+	// Завершить ход белого: MOVE 19→16 пипсом 3 → auto-END_TURN
+	// (LegalMoves пуст).
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 19, To: 16})
 	require.NoError(t, err)
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
-	_ = readMessage(t, ctx, conn1) // STATE
-	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES (пустой)
-
-	et, err := json.Marshal(protocol.ClientMessage{Type: "END_TURN"})
-	require.NoError(t, err)
-	require.NoError(t, conn1.Write(ctx, websocket.MessageText, et))
-	_ = readMessage(t, ctx, conn1) // STATE
-	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // STATE после Apply
+	_ = readMessage(t, ctx, conn2) // STATE после Apply
+	_ = readMessage(t, ctx, conn1) // STATE auto-END_TURN
+	_ = readMessage(t, ctx, conn2) // STATE auto-END_TURN
 
 	// Black: ROLL
 	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
