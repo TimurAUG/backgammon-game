@@ -105,6 +105,7 @@ func (g *Game) RollForFirst(c domain.Color) error {
 	}
 
 	g.broadcastStateLocked()
+	g.sendLegalMovesLocked(g.State.Turn)
 	return nil
 }
 
@@ -117,6 +118,20 @@ func (g *Game) broadcastStateLocked() {
 			_ = conn.Send(msg)
 		}
 	}
+}
+
+// sendLegalMovesLocked отправляет LEGAL_MOVES игроку цвета c — только тому,
+// чей сейчас ход. Вызывается с захваченным mu.
+func (g *Game) sendLegalMovesLocked(c domain.Color) {
+	if g.conns[c] == nil {
+		return
+	}
+	moves := domain.LegalMoves(g.State)
+	payload := make([]protocol.MovePayload, len(moves))
+	for i, m := range moves {
+		payload[i] = protocol.MovePayload{From: uint8(m.From), To: uint8(m.To), Pip: m.Pip}
+	}
+	_ = g.conns[c].Send(protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload})
 }
 
 // StateMessage конвертирует доменное состояние в STATE-сообщение протокола.

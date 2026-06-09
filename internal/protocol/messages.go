@@ -23,17 +23,26 @@ type DicePayload struct {
 	Remaining []uint8 `json:"remaining"`
 }
 
+// MovePayload — одиночный ход в LEGAL_MOVES.
+// To == 0 означает выкид.
+type MovePayload struct {
+	From uint8 `json:"from"`
+	To   uint8 `json:"to"`
+	Pip  uint8 `json:"pip"`
+}
+
 // ServerMessage — сообщение от сервера клиенту.
 //
 // Общий тип для STATE и ERROR — наименьшее количество разных структур
 // упрощает чтение и сериализацию. Когда состав сообщений вырастет, можно
 // будет разнести на отдельные типы с json.RawMessage payload.
 type ServerMessage struct {
-	Type    string       `json:"type"`
-	Board   []int8       `json:"board,omitempty"`
-	Turn    string       `json:"turn,omitempty"`
-	Status  string       `json:"status,omitempty"`
-	Dice    *DicePayload `json:"dice,omitempty"`
-	Code    string       `json:"code,omitempty"`
-	Message string       `json:"message,omitempty"`
+	Type    string        `json:"type"`
+	Board   []int8        `json:"board,omitempty"`
+	Turn    string        `json:"turn,omitempty"`
+	Status  string        `json:"status,omitempty"`
+	Dice    *DicePayload  `json:"dice,omitempty"`
+	Moves   []MovePayload `json:"moves,omitempty"`
+	Code    string        `json:"code,omitempty"`
+	Message string        `json:"message,omitempty"`
 }
