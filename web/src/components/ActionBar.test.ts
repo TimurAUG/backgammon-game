@@ -16,6 +16,7 @@ interface BaseProps {
   turn: 'white' | 'black'
   myColor: 'white' | 'black'
   rolledForFirst: boolean
+  disabled: boolean
   onAction: (msg: ClientMessage) => void
 }
 
@@ -25,6 +26,7 @@ function defaultProps(overrides: Partial<BaseProps> = {}): BaseProps {
     turn: 'white',
     myColor: 'white',
     rolledForFirst: false,
+    disabled: false,
     onAction: vi.fn(),
     ...overrides,
   }
@@ -170,5 +172,29 @@ describe('ActionBar click handlers (#17/#18)', () => {
     await fireEvent.click(screen.getByTestId('action-resign'))
 
     expect(onAction).toHaveBeenCalledWith({ type: 'RESIGN' })
+  })
+})
+
+describe('ActionBar disabled (#26c)', () => {
+  test('ActionBar_disabled_disablesAllButtons', () => {
+    render(ActionBar, { props: defaultProps({ rolledForFirst: false, disabled: true }) })
+
+    expect(screen.getByTestId('action-roll-for-first')).toBeDisabled()
+    expect(screen.getByTestId('action-resign')).toBeDisabled()
+  })
+
+  test('ActionBar_disabled_clickDoesNotFireOnAction', async () => {
+    const onAction = vi.fn()
+    render(ActionBar, { props: defaultProps({ disabled: true, onAction }) })
+
+    await fireEvent.click(screen.getByTestId('action-resign'))
+
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  test('ActionBar_notDisabled_buttonsEnabled', () => {
+    render(ActionBar, { props: defaultProps({ disabled: false }) })
+
+    expect(screen.getByTestId('action-resign')).toBeEnabled()
   })
 })
