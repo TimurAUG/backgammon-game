@@ -18,16 +18,32 @@ const (
 
 // GameState — снимок партии для оркестрации хода.
 //
-// Поля IsFirstMove, Winner, WinKind будут добавлены позже по мере надобности
-// транспорта.
+// HeadConsumed[c] — сколько шашек цвета c снято с головы в текущем ходу.
+// Обнуляется на END_TURN. Используется в LegalMoves для правила головы.
+//
+// IsFirstMove[c] — это первый ход партии для цвета c (для исключения
+// дублей 6:6/4:4/3:3 в правиле головы). Сбрасывается в false после первого
+// END_TURN этого цвета.
+//
+// Поля Winner, WinKind будут добавлены позже по мере надобности транспорта.
 //
 // TDD plan #31, #32.
 type GameState struct {
-	Board    Board
-	Turn     Color
-	Dice     Dice
-	BorneOff [2]uint8
-	Status   GameStatus
+	Board        Board
+	Turn         Color
+	Dice         Dice
+	BorneOff     [2]uint8
+	Status       GameStatus
+	HeadConsumed [2]uint8
+	IsFirstMove  [2]bool
+}
+
+// HeadPoint возвращает пункт головы цвета c: 24 для белых, 12 для чёрных.
+func HeadPoint(c Color) Point {
+	if c == Black {
+		return 12
+	}
+	return 24
 }
 
 // ErrIllegalMove возвращается из Apply, если ход нелегален: целевая клетка
@@ -82,11 +98,19 @@ func Apply(s GameState, m Move) (GameState, error) {
 		}
 	}
 
+	newHeadConsumed := s.HeadConsumed
+	if m.From == HeadPoint(s.Turn) {
+		newHeadConsumed[s.Turn]++
+	}
+
 	return GameState{
-		Board:    newBoard,
-		Turn:     s.Turn,
-		Dice:     s.Dice.Use(m.Pip),
-		BorneOff: newBorneOff,
+		Board:        newBoard,
+		Turn:         s.Turn,
+		Dice:         s.Dice.Use(m.Pip),
+		BorneOff:     newBorneOff,
+		Status:       s.Status,
+		HeadConsumed: newHeadConsumed,
+		IsFirstMove:  s.IsFirstMove,
 	}, nil
 }
 

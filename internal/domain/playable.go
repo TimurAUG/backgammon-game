@@ -59,16 +59,22 @@ func hasCheckerOf(b Board, c Color, p Point) bool {
 // (From, To, Pip) удаляются — при дубле в Remaining повторяющиеся пипсы
 // порождали бы одинаковые ходы.
 //
-// Не учитывает правило головы и правило шести — это уровни выше
-// (handler MOVE/END_TURN).
+// Учитывает правило головы через HeadMoveAllowed(HeadConsumed, Dice,
+// IsFirstMove). Правило шести (#20) на этом уровне не накладывается —
+// это проверка только на END_TURN.
 //
 // Подготовка к #34 (LEGAL_MOVES в WS-протоколе).
 func LegalMoves(s GameState) []Move {
+	head := HeadPoint(s.Turn)
+	headAllowed := HeadMoveAllowed(s.HeadConsumed[s.Turn], s.Dice, s.IsFirstMove[s.Turn])
 	seen := map[Move]bool{}
 	moves := make([]Move, 0)
 	for _, pip := range s.Dice.Remaining {
 		for from := Point(1); from <= 24; from++ {
 			if !hasCheckerOf(s.Board, s.Turn, from) {
+				continue
+			}
+			if from == head && !headAllowed {
 				continue
 			}
 			next := NextPoint(s.Turn, from, pip)

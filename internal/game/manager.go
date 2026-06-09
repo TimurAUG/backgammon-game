@@ -208,9 +208,10 @@ func (m *Manager) JoinGame(id string, conn Conn) (domain.Color, *Game, error) {
 		g = &Game{
 			ID: id,
 			State: domain.GameState{
-				Board:  domain.InitialBoard(),
-				Turn:   domain.White,
-				Status: domain.StatusWaitingForRoll,
+				Board:       domain.InitialBoard(),
+				Turn:        domain.White,
+				Status:      domain.StatusWaitingForRoll,
+				IsFirstMove: [2]bool{true, true},
 			},
 			rng: m.rng,
 		}
