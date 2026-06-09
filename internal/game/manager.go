@@ -418,6 +418,14 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 		Board:  board,
 		Turn:   colorString(s.Turn),
 		Status: statusString(s.Status),
+		BorneOff: &protocol.BorneOffPayload{
+			White: s.BorneOff[domain.White],
+			Black: s.BorneOff[domain.Black],
+		},
+		IsFirstMove: &protocol.IsFirstMovePayload{
+			White: s.IsFirstMove[domain.White],
+			Black: s.IsFirstMove[domain.Black],
+		},
 	}
 	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
 		msg.Dice = &protocol.DicePayload{

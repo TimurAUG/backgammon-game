@@ -32,20 +32,36 @@ type MovePayload struct {
 	Pip  uint8 `json:"pip"`
 }
 
+// BorneOffPayload — счёт выкинутых шашек в STATE.
+type BorneOffPayload struct {
+	White uint8 `json:"white"`
+	Black uint8 `json:"black"`
+}
+
+// IsFirstMovePayload — флаг «ещё не сделал ни одного END_TURN» для
+// каждого цвета. Нужен клиенту, чтобы понимать, действует ли
+// исключение для дублей 6:6/4:4/3:3 на первом ходу.
+type IsFirstMovePayload struct {
+	White bool `json:"white"`
+	Black bool `json:"black"`
+}
+
 // ServerMessage — сообщение от сервера клиенту.
 //
 // Общий тип для STATE и ERROR — наименьшее количество разных структур
 // упрощает чтение и сериализацию. Когда состав сообщений вырастет, можно
 // будет разнести на отдельные типы с json.RawMessage payload.
 type ServerMessage struct {
-	Type    string        `json:"type"`
-	Board   []int8        `json:"board,omitempty"`
-	Turn    string        `json:"turn,omitempty"`
-	Status  string        `json:"status,omitempty"`
-	Dice    *DicePayload  `json:"dice,omitempty"`
-	Moves   []MovePayload `json:"moves,omitempty"`
-	Winner  string        `json:"winner,omitempty"`
-	Kind    string        `json:"kind,omitempty"`
-	Code    string        `json:"code,omitempty"`
-	Message string        `json:"message,omitempty"`
+	Type        string              `json:"type"`
+	Board       []int8              `json:"board,omitempty"`
+	Turn        string              `json:"turn,omitempty"`
+	Status      string              `json:"status,omitempty"`
+	Dice        *DicePayload        `json:"dice,omitempty"`
+	BorneOff    *BorneOffPayload    `json:"borneOff,omitempty"`
+	IsFirstMove *IsFirstMovePayload `json:"isFirstMove,omitempty"`
+	Moves       []MovePayload       `json:"moves,omitempty"`
+	Winner      string              `json:"winner,omitempty"`
+	Kind        string              `json:"kind,omitempty"`
+	Code        string              `json:"code,omitempty"`
+	Message     string              `json:"message,omitempty"`
 }
