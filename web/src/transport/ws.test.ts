@@ -1,11 +1,13 @@
 // FRONTEND_SPEC #3 — connect / send (мок WebSocket).
 // FRONTEND_SPEC #4 — onMessage парсит через ServerMessage.
+// FRONTEND_SPEC #5 — реконнект с экспоненциальным backoff.
+// FRONTEND_SPEC #6 — auto-JOIN после open (включая реконнект).
 //
 // Тесты используют общий MockWebSocket. WSClient получает
 // конструктор через DI — в тестах это MockWebSocket, в проде —
 // глобальный WebSocket (по умолчанию).
 
-import { beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import type { ServerMessage } from '../protocol/messages'
 
@@ -102,5 +104,126 @@ describe('WSClient onMessage (#4)', () => {
     MockWebSocket.last().receive('{"board":[]}') // нет поля type
 
     expect(received).toHaveLength(0)
+  })
+})
+
+describe('WSClient auto-JOIN (#6)', () => {
+  test('WSClient_open_autoSendsJoinWithConfiguredCredentials', () => {
+    const client = mkClient()
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    expect(MockWebSocket.last().sent).toEqual([
+      '{"type":"JOIN","gameId":"g1","token":"tok"}',
+    ])
+  })
+})
+
+describe('WSClient reconnect (#5)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('WSClient_abnormalClose_reconnectsAfter1s', () => {
+    const client = mkClient()
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+
+    vi.advanceTimersByTime(999)
+    expect(MockWebSocket.instances).toHaveLength(1)
+
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(MockWebSocket.last().url).toBe('ws://localhost:8080/ws')
+  })
+
+  test('WSClient_reconnect_backoffDoublesOnFailures', () => {
+    const client = mkClient()
+    client.connect()
+
+    // первый сокет — open → close → реконнект через 1с
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(1000)
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    // второй — close БЕЗ open → реконнект через 2с
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(1999)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(3)
+
+    // третий — снова close без open → 4с
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(3999)
+    expect(MockWebSocket.instances).toHaveLength(3)
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(4)
+  })
+
+  test('WSClient_reconnect_backoffCappedAt30s', () => {
+    const client = mkClient()
+    client.connect()
+
+    // Последовательность задержек: 1, 2, 4, 8, 16, 30 (потолок).
+    const delays = [1000, 2000, 4000, 8000, 16000, 30000]
+    for (let i = 0; i < delays.length; i++) {
+      MockWebSocket.last().serverClose(1006)
+      vi.advanceTimersByTime(delays[i] as number)
+      expect(MockWebSocket.instances).toHaveLength(i + 2)
+    }
+
+    // Седьмая попытка — снова 30с (потолок держится).
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(29999)
+    expect(MockWebSocket.instances).toHaveLength(delays.length + 1)
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(delays.length + 2)
+  })
+
+  test('WSClient_reconnect_resetsBackoffAfterSuccessfulOpen', () => {
+    const client = mkClient()
+    client.connect()
+
+    // 1й сокет: open → close → реконнект через 1с
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(1000)
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    // 2й сокет: open (успех сбрасывает счётчик) → close → снова 1с, не 2с
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+    vi.advanceTimersByTime(999)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(3)
+  })
+
+  test('WSClient_reconnect_alsoAutoSendsJoinAfterReopen', () => {
+    const client = mkClient()
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+
+    vi.advanceTimersByTime(1000)
+    const second = MockWebSocket.last()
+    second.acceptOpen()
+
+    expect(second.sent).toEqual(['{"type":"JOIN","gameId":"g1","token":"tok"}'])
+  })
+
+  test('WSClient_close_doesNotReconnect', () => {
+    const client = mkClient()
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    client.close()
+
+    vi.advanceTimersByTime(60000)
+    expect(MockWebSocket.instances).toHaveLength(1)
   })
 })
