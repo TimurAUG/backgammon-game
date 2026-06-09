@@ -12,6 +12,7 @@ import {
   parseServerMessage,
   serializeClientMessage,
   type ClientMessage,
+  type ErrorCode,
   type ServerMessage,
 } from './messages'
 
@@ -96,6 +97,23 @@ describe('parseServerMessage', () => {
     if (msg.type !== 'ERROR') return
     expect(msg.code).toBe('RULE_OF_SIX')
     expect(msg.message).toContain('блок 6+')
+  })
+
+  test('parseServerMessage_JOINED_keepsColor', () => {
+    // web#24-prep — JOINED сообщает клиенту его цвет (nardy-protocol).
+    const msg = parseServerMessage('{"type":"JOINED","color":"black"}')
+    expect(msg.type).toBe('JOINED')
+    if (msg.type !== 'JOINED') return
+    expect(msg.color).toBe('black')
+  })
+
+  test('parseServerMessage_ERROR_acceptsRoomFullCode', () => {
+    // web#24-prep — ROOM_FULL шлётся третьему клиенту (FRONTEND_SPEC § 9.2).
+    const msg = parseServerMessage('{"type":"ERROR","code":"ROOM_FULL","message":"оба слота заняты"}')
+    expect(msg.type).toBe('ERROR')
+    if (msg.type !== 'ERROR') return
+    const code: ErrorCode = msg.code
+    expect(code).toBe('ROOM_FULL')
   })
 
   test('parseServerMessage_invalidJson_throws', () => {

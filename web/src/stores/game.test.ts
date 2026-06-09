@@ -118,6 +118,23 @@ describe('applyServerMessage GAME_OVER (#9)', () => {
   })
 })
 
+describe('applyServerMessage JOINED (web#24-prep)', () => {
+  test('gameStore_initial_myColorIsNull', () => {
+    expect(gameState.myColor).toBeNull()
+  })
+
+  test('gameStore_onJOINED_setsMyColor', () => {
+    applyServerMessage({ type: 'JOINED', color: 'black' })
+    expect(gameState.myColor).toBe('black')
+  })
+
+  test('gameStore_reset_clearsMyColor', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    resetGameState()
+    expect(gameState.myColor).toBeNull()
+  })
+})
+
 describe('applyServerMessage ERROR (#10)', () => {
   test('gameStore_onERROR_doesNotMutateAnyField', () => {
     const board = Array(24).fill(0)
