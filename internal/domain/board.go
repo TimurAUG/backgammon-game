@@ -124,7 +124,20 @@ type Move struct {
 //
 // TDD plan #7, #8, #9, #10.
 func IsLegalStep(b Board, c Color, m Move) bool {
-	// Минимальная реализация для #7, #8: проверить направление и пипс.
-	// Владельца целевой клетки — добавим в #9, #10.
-	return m.To == NextPoint(c, m.From, m.Pip)
+	if m.To == 0 {
+		return false // выкид — не обрабатывается здесь
+	}
+	next := NextPoint(c, m.From, m.Pip)
+	if next == 0 || m.To != next {
+		return false
+	}
+	// m.To гарантированно в [1, 24] после совпадения с next.
+	target := b[m.To-1]
+	switch c {
+	case White:
+		return target >= 0 // пусто или свои
+	case Black:
+		return target <= 0
+	}
+	return false
 }
