@@ -51,11 +51,13 @@ func TestHandler_JoinReturnsState(t *testing.T) {
 	require.Equal(t, int8(-15), msg.Board[11], "15 чёрных на пункте 12")
 }
 
-// TestHandler_UnauthorizedWithoutHeader — без Authorization-заголовка
-// сервер должен отказать в WS-handshake до upgrade.
+// TestHandler_JoinTokenFallback — браузерный путь аутентификации: нативный
+// WebSocket в браузере не умеет ставить Authorization-заголовок, поэтому
+// сервер должен принимать upgrade без заголовка и брать токен из payload
+// JOIN (как задокументировано в nardy-protocol).
 //
-// TDD plan #37.
-func TestHandler_UnauthorizedWithoutHeader(t *testing.T) {
+// Подготовка к web#24 (FRONTEND_SPEC, Этап 8).
+func TestHandler_JoinTokenFallback(t *testing.T) {
 	mgr := game.NewManager()
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -64,10 +66,43 @@ func TestHandler_UnauthorizedWithoutHeader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	_, resp, err := websocket.Dial(ctx, wsURL, nil)
-	require.Error(t, err, "WS-handshake без токена должен провалиться")
-	require.NotNil(t, resp)
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(t, err, "upgrade без Authorization-заголовка должен проходить")
+	defer conn.Close(websocket.StatusInternalError, "test cleanup")
+
+	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: "g1", Token: "t1"})
+	require.NoError(t, err)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+
+	msg := readMessage(t, ctx, conn)
+	require.Equal(t, "STATE", msg.Type, "JOIN с token в payload должен регистрировать игрока")
+}
+
+// TestHandler_UnauthorizedWithoutAnyToken — нет ни Authorization-заголовка,
+// ни token в JOIN → ERROR UNAUTHORIZED по WS.
+//
+// Заменяет TestHandler_UnauthorizedWithoutHeader (#37): отказ 401 до upgrade
+// оставлял браузерные клиенты вообще без пути аутентификации.
+func TestHandler_UnauthorizedWithoutAnyToken(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close(websocket.StatusInternalError, "test cleanup")
+
+	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: "g1"})
+	require.NoError(t, err)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+
+	msg := readMessage(t, ctx, conn)
+	require.Equal(t, "ERROR", msg.Type)
+	require.Equal(t, "UNAUTHORIZED", msg.Code, "JOIN без токена должен отклоняться как UNAUTHORIZED")
 }
 
 // TestHandler_SecondJoinNotifiesFirst — интеграционный тест на два клиента
