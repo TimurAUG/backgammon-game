@@ -44,13 +44,16 @@ var ErrInvalidState = errors.New("invalid state")
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
 // бросков и две позиции для соединений игроков (индексируются по
-// domain.Color). Поля conns и rolledForFirst защищены mu.
+// domain.Color). Параллельно хранятся токены — для реконнекта.
+//
+// Поля conns/tokens/rolledForFirst защищены mu.
 type Game struct {
 	ID    string
 	State domain.GameState
 
 	mu             sync.Mutex
 	conns          [2]Conn
+	tokens         [2]string
 	rng            io.Reader
 	rolledForFirst [2]bool
 }
@@ -432,12 +435,21 @@ func NewManagerWithRand(rng io.Reader) *Manager {
 	return &Manager{games: map[string]*Game{}, rng: rng}
 }
 
-// JoinGame регистрирует соединение conn в игре с id и возвращает присвоенный
-// цвет: первый присоединившийся — White, второй — Black. Если игры ещё не
-// было, она создаётся с начальной доской и Turn=White.
+// JoinGame регистрирует соединение conn в игре с id.
 //
-// Если игра уже содержит двух игроков, возвращает ErrRoomFull.
-func (m *Manager) JoinGame(id string, conn Conn) (domain.Color, *Game, error) {
+// Логика:
+//   - Если игры с id ещё нет — создаётся с начальной доской и Turn=White.
+//   - Реконнект: если token != "" и совпадает с сохранённым в одном из
+//     слотов — соединение заменяется на conn в том же слоте, возвращается
+//     прежний цвет.
+//   - Новый игрок: ищется слот, где token == "" и conn == nil (полностью
+//     свободный). Если такой найден — занимается, token сохраняется (даже
+//     пустой).
+//   - Если ни реконнект, ни свободного слота нет — ErrRoomFull.
+//
+// При token == "" реконнект невозможен (на сервере нет способа отличить
+// одного клиента от другого).
+func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, error) {
 	m.mu.Lock()
 	g, ok := m.games[id]
 	if !ok {
@@ -457,13 +469,22 @@ func (m *Manager) JoinGame(id string, conn Conn) (domain.Color, *Game, error) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.conns[domain.White] == nil {
-		g.conns[domain.White] = conn
-		return domain.White, g, nil
+
+	if token != "" {
+		for c := 0; c < 2; c++ {
+			if g.tokens[c] == token {
+				g.conns[c] = conn
+				return domain.Color(c), g, nil
+			}
+		}
 	}
-	if g.conns[domain.Black] == nil {
-		g.conns[domain.Black] = conn
-		return domain.Black, g, nil
+
+	for c := 0; c < 2; c++ {
+		if g.tokens[c] == "" && g.conns[c] == nil {
+			g.tokens[c] = token
+			g.conns[c] = conn
+			return domain.Color(c), g, nil
+		}
 	}
 	return 0, nil, ErrRoomFull
 }

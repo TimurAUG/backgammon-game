@@ -59,7 +59,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	color, g, err := h.mgr.JoinGame(msg.GameID, pc)
+	color, g, err := h.mgr.JoinGame(msg.GameID, msg.Token, pc)
 	if err != nil {
 		code := "INVALID_STATE"
 		if errors.Is(err, game.ErrRoomFull) {

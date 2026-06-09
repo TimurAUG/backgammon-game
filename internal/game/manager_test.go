@@ -44,9 +44,9 @@ func TestGame_EndTurn_RejectsSixBlockViolation(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	black := &mockConn{}
-	_, _, err := mgr.JoinGame("g1", white)
+	_, _, err := mgr.JoinGame("g1", "", white)
 	require.NoError(t, err)
-	_, g, err := mgr.JoinGame("g1", black)
+	_, g, err := mgr.JoinGame("g1", "", black)
 	require.NoError(t, err)
 
 	var b domain.Board
@@ -76,9 +76,9 @@ func TestGame_HandleMove_TriggersGameOverMars(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	black := &mockConn{}
-	_, _, err := mgr.JoinGame("g1", white)
+	_, _, err := mgr.JoinGame("g1", "", white)
 	require.NoError(t, err)
-	_, g, err := mgr.JoinGame("g1", black)
+	_, g, err := mgr.JoinGame("g1", "", black)
 	require.NoError(t, err)
 
 	var b domain.Board
