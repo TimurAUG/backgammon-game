@@ -227,3 +227,57 @@ describe('WSClient reconnect (#5)', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 })
+
+describe('WSClient state changes (#26b)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('WSClient_connect_emitsConnecting', () => {
+    const client = mkClient()
+    const phases: string[] = []
+    client.onStateChange((p) => phases.push(p))
+
+    client.connect()
+
+    expect(phases).toEqual(['connecting'])
+  })
+
+  test('WSClient_open_emitsConnected', () => {
+    const client = mkClient()
+    const phases: string[] = []
+    client.onStateChange((p) => phases.push(p))
+
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+
+    expect(phases).toEqual(['connecting', 'connected'])
+  })
+
+  test('WSClient_abnormalClose_emitsReconnecting', () => {
+    const client = mkClient()
+    const phases: string[] = []
+    client.onStateChange((p) => phases.push(p))
+
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    MockWebSocket.last().serverClose(1006)
+
+    expect(phases).toEqual(['connecting', 'connected', 'reconnecting'])
+  })
+
+  test('WSClient_deliberateClose_doesNotEmitReconnecting', () => {
+    const client = mkClient()
+    const phases: string[] = []
+    client.onStateChange((p) => phases.push(p))
+
+    client.connect()
+    MockWebSocket.last().acceptOpen()
+    client.close()
+
+    expect(phases).toEqual(['connecting', 'connected'])
+  })
+})
