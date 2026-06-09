@@ -1,5 +1,7 @@
 package domain
 
+import "io"
+
 // Dice — состояние кубиков на текущий ход.
 //
 // A, B: значения двух кубиков (1..6).
@@ -53,4 +55,40 @@ func (d Dice) Use(pip uint8) Dice {
 		}
 	}
 	return d
+}
+
+// RollOne читает байты из r и возвращает значение одного кубика в диапазоне
+// 1..6. Использует rejection sampling: байты ≥252 отбрасываются, потому что
+// 256 не делится на 6 нацело — без отбраковки значения 1..4 выпадали бы
+// чуть чаще, чем 5..6 (modulo-bias).
+//
+// В production используется crypto/rand.Reader. В тестах подаётся
+// bytes.Reader с фиксированными байтами.
+//
+// Подготовка к #34b (ROLL_FOR_FIRST/ROLL).
+func RollOne(r io.Reader) (uint8, error) {
+	var buf [1]byte
+	for {
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
+			return 0, err
+		}
+		if buf[0] < 252 {
+			return uint8(buf[0]%6) + 1, nil
+		}
+	}
+}
+
+// RollDice бросает два кубика через RollOne и собирает Dice через NewDice.
+//
+// Подготовка к #34b (ROLL).
+func RollDice(r io.Reader) (Dice, error) {
+	a, err := RollOne(r)
+	if err != nil {
+		return Dice{}, err
+	}
+	b, err := RollOne(r)
+	if err != nil {
+		return Dice{}, err
+	}
+	return NewDice(a, b), nil
 }
