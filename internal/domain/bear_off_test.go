@@ -68,3 +68,103 @@ func TestIsLegalBearOff_GateAndExactPip(t *testing.T) {
 		})
 	}
 }
+
+// TestIsLegalBearOff_OverpipFromFarthest проверяет переборный пипс: если
+// в точном пункте нет шашек, выкид возможен с самого дальнего от выкида
+// занятого пункта меньшего пипса (по направлению цвета).
+//
+// «Самый дальний» — это пункт, с которого до выкида ещё дальше всех. Для
+// белого это бо́льший номер пункта в доме (1..6 → пункт 5 дальше пункта 1).
+// Для чёрного это меньший номер пункта в доме (13..18 → пункт 14 дальше
+// пункта 17).
+//
+// TDD plan #23.
+func TestIsLegalBearOff_OverpipFromFarthest(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(b *Board)
+		color Color
+		from  Point
+		pip   uint8
+		want  bool
+	}{
+		{
+			name: "белые: шашки на 1,3,5, пипс 6 (на 6 пусто) → выкид с 5 легален",
+			setup: func(b *Board) {
+				b[0], b[2], b[4] = 1, 1, 1
+			},
+			color: White, from: 5, pip: 6,
+			want: true,
+		},
+		{
+			name: "белые: шашки на 1,3,5, пипс 6 → выкид с 3 нелегален (на 5 есть дальняя)",
+			setup: func(b *Board) {
+				b[0], b[2], b[4] = 1, 1, 1
+			},
+			color: White, from: 3, pip: 6,
+			want: false,
+		},
+		{
+			name: "чёрные: шашки на 14,17, пипс 6 (на 13 пусто) → выкид с 14 легален",
+			setup: func(b *Board) {
+				b[13], b[16] = -1, -1
+			},
+			color: Black, from: 14, pip: 6,
+			want: true,
+		},
+		{
+			name: "чёрные: шашки на 14,17, пипс 6 → выкид с 17 нелегален (на 14 есть дальняя)",
+			setup: func(b *Board) {
+				b[13], b[16] = -1, -1
+			},
+			color: Black, from: 17, pip: 6,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b Board
+			tc.setup(&b)
+			require.Equal(t, tc.want, IsLegalBearOff(b, tc.color, tc.from, tc.pip))
+		})
+	}
+}
+
+// TestIsLegalStep_InHomeMovement фиксирует, что движение внутри дома по
+// обычному пипсу — это легальный шаг. Специальной логики не требуется:
+// IsLegalStep уже корректно обрабатывает такие шаги (направление + цвет
+// целевой клетки). Тест документирует это явно.
+//
+// TDD plan #24.
+func TestIsLegalStep_InHomeMovement(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(b *Board)
+		color Color
+		move  Move
+	}{
+		{
+			name: "белые: с 6 на 4 пипсом 2, целевой пункт пуст → легально",
+			setup: func(b *Board) {
+				b[5] = 1
+			},
+			color: White,
+			move:  Move{From: 6, To: 4, Pip: 2},
+		},
+		{
+			name: "чёрные: с 17 на 15 пипсом 2, целевой пункт пуст → легально",
+			setup: func(b *Board) {
+				b[16] = -1
+			},
+			color: Black,
+			move:  Move{From: 17, To: 15, Pip: 2},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b Board
+			tc.setup(&b)
+			require.True(t, IsLegalStep(b, tc.color, tc.move))
+		})
+	}
+}
