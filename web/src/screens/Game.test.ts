@@ -4,6 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { resetConnectionState, setConnectionState } from '../stores/connection.svelte'
 import { applyServerMessage, resetGameState } from '../stores/game.svelte'
 import { stateFixture } from '../../tests/fixtures'
 
@@ -11,6 +12,7 @@ import Game from './Game.svelte'
 
 beforeEach(() => {
   resetGameState()
+  resetConnectionState()
 })
 
 const noop = { onAction: vi.fn(), onNewGame: vi.fn() }
@@ -85,5 +87,25 @@ describe('Game action wiring (#24a)', () => {
     await fireEvent.click(screen.getByTestId('action-new-game'))
 
     expect(onNewGame).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Game reconnect blocking (#26d)', () => {
+  test('Game_reconnecting_disablesActionBar', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    setConnectionState('reconnecting')
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('action-resign')).toBeDisabled()
+  })
+
+  test('Game_connected_keepsActionBarEnabled', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    setConnectionState('connected')
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('action-resign')).toBeEnabled()
   })
 })
