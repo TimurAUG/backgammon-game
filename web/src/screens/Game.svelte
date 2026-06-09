@@ -4,6 +4,7 @@
   import Dice from '../components/Dice.svelte'
   import GameOver from '../components/GameOver.svelte'
   import type { ClientMessage } from '../protocol/messages'
+  import { connection } from '../stores/connection.svelte'
   import { gameState } from '../stores/game.svelte'
 
   interface Props {
@@ -18,6 +19,9 @@
   const rolledForFirst = $derived(
     gameState.dice !== null || !gameState.isFirstMove.white || !gameState.isFirstMove.black,
   )
+
+  // Реконнект → ActionBar заблокирован (сокет закрыт, send бы бросил).
+  const blocked = $derived(connection.state === 'reconnecting')
 
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })
@@ -39,6 +43,7 @@
         turn={gameState.turn}
         myColor={gameState.myColor}
         {rolledForFirst}
+        disabled={blocked}
         {onAction}
       />
     {/if}
