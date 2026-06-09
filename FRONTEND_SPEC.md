@@ -181,7 +181,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 0 — каркас (`/web/` собран на Vite 6 + Svelte 5 + TS 5 + Vitest 3; smoke-тест `App.test.ts` зелёный, `npm run check`/`lint`/`build` без ошибок).
 - ✅ Этап 1 — типы протокола (`web/src/protocol/messages.ts`: discriminated unions `ClientMessage` и `ServerMessage`, `serializeClientMessage` + `parseServerMessage`; 17 тестов).
 - ✅ Этап 2 — WSClient (`web/src/transport/ws.ts`: connect/send/onMessage + реконнект с backoff 1с→30с + auto-JOIN после каждого open; 13 тестов; общий `MockWebSocket` в `web/tests/`).
-- ⬜ Этап 3 — gameStore
+- ✅ Этап 3 — gameStore (`web/src/stores/game.svelte.ts`: $state-объект `gameState`, `applyServerMessage` reducer-style для STATE/LEGAL_MOVES/GAME_OVER/ERROR; 7 тестов).
 - ⬜ Этап 4 — геометрия и доска
 - ⬜ Этап 5 — кубики
 - ⬜ Этап 6 — действия игрока
