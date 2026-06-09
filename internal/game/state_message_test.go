@@ -52,3 +52,24 @@ func TestStateMessage_IncludesBorneOffAndIsFirstMove(t *testing.T) {
 	require.False(t, parsed.IsFirstMove.White, "white уже сделал первый ход")
 	require.True(t, parsed.IsFirstMove.Black, "black ещё не ходил")
 }
+
+// TestStateMessage_RemainingIsJSONNumberArray фиксирует контракт nardy-protocol:
+// dice.remaining — массив чисел ([int]), а не base64-строка. Регрессия: поле
+// protocol.DicePayload.Remaining было []uint8, и encoding/json кодирует такие
+// срезы в base64 ("BQM="), из-за чего TS-клиент (ждёт number[]) ломался на
+// отображении кубиков. Go-тесты баг не ловили: base64↔[]uint8 round-trip
+// внутри Go симметричен.
+func TestStateMessage_RemainingIsJSONNumberArray(t *testing.T) {
+	s := domain.GameState{
+		Board:  domain.InitialBoard(),
+		Turn:   domain.White,
+		Status: domain.StatusWaitingForMove,
+		Dice:   domain.NewDice(5, 3),
+	}
+
+	raw, err := json.Marshal(game.StateMessage(s))
+	require.NoError(t, err)
+
+	require.Contains(t, string(raw), `"remaining":[5,3]`,
+		"dice.remaining должен сериализоваться как JSON-массив чисел, а не base64-строка")
+}
