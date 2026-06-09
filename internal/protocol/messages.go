@@ -6,13 +6,14 @@ package protocol
 
 // ClientMessage — сообщение от клиента серверу.
 //
-// На данный момент включает только минимально необходимые поля для #33
-// (JOIN). По мере реализации последующих циклов сюда будут добавлены
-// поля для ROLL, MOVE, END_TURN и т.п.
+// На данный момент включает поля для JOIN и MOVE. По мере реализации
+// последующих циклов сюда будут добавлены поля для ROLL, END_TURN и т.п.
 type ClientMessage struct {
 	Type   string `json:"type"`
 	GameID string `json:"gameId,omitempty"`
 	Token  string `json:"token,omitempty"`
+	From   uint8  `json:"from,omitempty"`
+	To     uint8  `json:"to,omitempty"`
 }
 
 // DicePayload — представление Dice в JSON-протоколе.

@@ -90,6 +90,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch in.Type {
 		case "ROLL_FOR_FIRST":
 			_ = g.RollForFirst(color)
+		case "MOVE":
+			if err := g.HandleMove(color, in.From, in.To); err != nil {
+				_ = pc.Send(protocol.ServerMessage{
+					Type: "ERROR", Code: "INVALID_MOVE", Message: err.Error(),
+				})
+			}
 		default:
 			_ = pc.Send(protocol.ServerMessage{
 				Type: "ERROR", Code: "INVALID_STATE",

@@ -57,6 +57,73 @@ func (g *Game) Detach(c domain.Color) {
 	g.conns[c] = nil
 }
 
+// HandleMove обрабатывает MOVE от игрока цвета c. Вычисляет pip по From/To
+// через NextPoint, выполняет Apply, рассылает STATE обоим и LEGAL_MOVES
+// активному игроку.
+//
+// Возвращает ошибку, если ход не текущего игрока, неверный from/to,
+// или Apply вернул ошибку. Сейчас ошибки молча проглатываются — позже
+// будут конвертироваться в ERROR сообщения (#34e+).
+//
+// TDD plan #34 (часть 4).
+func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.State.Turn != c {
+		return errors.New("not your turn")
+	}
+	pip, ok := findPipFor(g.State, domain.Point(from), domain.Point(to))
+	if !ok {
+		return errors.New("no matching pip")
+	}
+	newState, err := domain.Apply(g.State, domain.Move{
+		From: domain.Point(from),
+		To:   domain.Point(to),
+		Pip:  pip,
+	})
+	if err != nil {
+		return err
+	}
+	g.State = newState
+	g.broadcastStateLocked()
+	g.sendLegalMovesLocked(g.State.Turn)
+	return nil
+}
+
+// findPipFor подбирает значение пипса из Remaining такое, что ход (from→to)
+// валиден. Для выкида (to==0) предпочитает точный пипс над переборным.
+func findPipFor(s domain.GameState, from, to domain.Point) (uint8, bool) {
+	if to == 0 {
+		// Выкид: пробуем сначала точный пипс, потом переборные.
+		// Точный пипс для белого = from; для чёрного = 19 - from.
+		exact := uint8(from)
+		if s.Turn == domain.Black {
+			exact = uint8(19 - int(from))
+		}
+		for _, p := range s.Dice.Remaining {
+			if p == exact && domain.IsLegalBearOff(s.Board, s.Turn, from, p) {
+				return p, true
+			}
+		}
+		for _, p := range s.Dice.Remaining {
+			if domain.IsLegalBearOff(s.Board, s.Turn, from, p) {
+				return p, true
+			}
+		}
+		return 0, false
+	}
+	for _, p := range s.Dice.Remaining {
+		if domain.NextPoint(s.Turn, from, p) != to {
+			continue
+		}
+		if domain.IsLegalStep(s.Board, s.Turn, domain.Move{From: from, To: to, Pip: p}) {
+			return p, true
+		}
+	}
+	return 0, false
+}
+
 // RollForFirst обрабатывает сигнал «готов» от игрока c в фазе определения
 // первого хода.
 //
