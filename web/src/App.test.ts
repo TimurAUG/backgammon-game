@@ -123,3 +123,38 @@ describe('App auto-connect (#24c)', () => {
     )
   })
 })
+
+describe('App UNAUTHORIZED (#25)', () => {
+  async function connectAndOpen(): Promise<MockWebSocket> {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    return ws
+  }
+
+  test('App_unauthorized_clearsCredentials', async () => {
+    const ws = await connectAndOpen()
+
+    ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
+
+    expect(loadCredentials()).toBeNull()
+  })
+
+  test('App_unauthorized_returnsToConnect', async () => {
+    const ws = await connectAndOpen()
+
+    ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
+
+    expect(await screen.findByLabelText('ID игры')).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
+  })
+
+  test('App_unauthorized_closesSocketToStopReconnect', async () => {
+    const ws = await connectAndOpen()
+
+    ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
+
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED)
+  })
+})
