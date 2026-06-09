@@ -183,7 +183,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 2 — WSClient (`web/src/transport/ws.ts`: connect/send/onMessage + реконнект с backoff 1с→30с + auto-JOIN после каждого open; 13 тестов; общий `MockWebSocket` в `web/tests/`).
 - ✅ Этап 3 — gameStore (`web/src/stores/game.svelte.ts`: $state-объект `gameState`, `applyServerMessage` reducer-style для STATE/LEGAL_MOVES/GAME_OVER/ERROR; 7 тестов).
 - ✅ Этап 4 — геометрия и доска (`web/src/lib/geometry.ts`: `pointAnchor`/`checkerAt` + ViewBox-константы, 15 тестов; `web/src/components/Board.svelte`: SVG c 24 пунктами и шашками из `board: number[]`, 6 тестов).
-- ⬜ Этап 5 — кубики
+- ✅ Этап 5 — кубики (`web/src/components/Dice.svelte`: рендер двух кубиков и `remaining`; `dice: Dice | null` → пусто при null; 7 тестов).
 - ⬜ Этап 6 — действия игрока
 - ⬜ Этап 7 — конец игры
 - ⬜ Этап 8 — Connect и реконнект
