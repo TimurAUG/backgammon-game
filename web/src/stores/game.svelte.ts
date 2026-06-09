@@ -50,7 +50,17 @@ export function applyServerMessage(msg: ServerMessage): void {
     case 'LEGAL_MOVES':
       gameState.legalMoves = msg.moves
       break
-    // GAME_OVER / ERROR / OPPONENT_* — следующая пара #9+#10
-    // и отдельные сторы (connection).
+    case 'GAME_OVER':
+      gameState.gameOver = { winner: msg.winner, kind: msg.kind }
+      gameState.status = 'finished'
+      break
+    case 'ERROR':
+      // По FRONTEND_SPEC #10 — не меняем gameState. Логирование
+      // и нотификация UI — в connectionStore (отдельный слой).
+      break
+    case 'OPPONENT_JOINED':
+    case 'OPPONENT_LEFT':
+      // Соперник — connectionStore, не игровой стор.
+      break
   }
 }
