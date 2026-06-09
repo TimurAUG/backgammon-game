@@ -56,6 +56,20 @@ type Game struct {
 	tokens         [2]string
 	rng            io.Reader
 	rolledForFirst [2]bool
+
+	// storage — куда персистится игра. nil → in-memory only (тесты домена,
+	// memoryStorage). Установлен Manager.JoinGame после Load/Create.
+	storage Storage
+}
+
+// maybePersist сохраняет текущее состояние в Storage, если он задан.
+// Обычно вызывается через defer после g.mu.Unlock() (LIFO порядок defer'ов
+// гарантирует, что Unlock сработает раньше).
+func (g *Game) maybePersist() {
+	if g.storage == nil {
+		return
+	}
+	_ = g.storage.SaveGame(g)
 }
 
 // Tokens возвращает копию токенов игроков. Для инспекции (тесты,
@@ -103,6 +117,7 @@ func (g *Game) Detach(c domain.Color) {
 // TDD plan #34 (часть 4).
 func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 	g.mu.Lock()
+	defer g.maybePersist()
 	defer g.mu.Unlock()
 
 	if g.State.Turn != c {
@@ -202,6 +217,7 @@ func findPipFor(s domain.GameState, from, to domain.Point) (uint8, bool) {
 // TDD plan #34 (часть 7 — ROLL).
 func (g *Game) Roll(c domain.Color) error {
 	g.mu.Lock()
+	defer g.maybePersist()
 	defer g.mu.Unlock()
 
 	if g.State.Turn != c {
@@ -236,6 +252,7 @@ func (g *Game) Roll(c domain.Color) error {
 // TDD plan #34 (часть 5).
 func (g *Game) EndTurn(c domain.Color) error {
 	g.mu.Lock()
+	defer g.maybePersist()
 	defer g.mu.Unlock()
 
 	if g.State.Turn != c {
@@ -283,6 +300,7 @@ func (g *Game) EndTurn(c domain.Color) error {
 // TDD plan #34 (часть 2).
 func (g *Game) RollForFirst(c domain.Color) error {
 	g.mu.Lock()
+	defer g.maybePersist()
 	defer g.mu.Unlock()
 
 	if g.rolledForFirst[c] {
@@ -481,29 +499,39 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 				Status:      domain.StatusWaitingForRoll,
 				IsFirstMove: [2]bool{true, true},
 			},
-			rng: m.rng,
 		}
-		_ = m.storage.SaveGame(g)
 	}
+	g.rng = m.rng
+	g.storage = m.storage
 
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	color, err := g.attachLocked(token, conn)
+	g.mu.Unlock()
+	if err != nil {
+		return 0, nil, err
+	}
 
+	_ = m.storage.SaveGame(g)
+	return color, g, nil
+}
+
+// attachLocked регистрирует conn в свободном слоте или реконнектит в слот с
+// тем же token. Должен вызываться под g.mu.
+func (g *Game) attachLocked(token string, conn Conn) (domain.Color, error) {
 	if token != "" {
 		for c := 0; c < 2; c++ {
 			if g.tokens[c] == token {
 				g.conns[c] = conn
-				return domain.Color(c), g, nil
+				return domain.Color(c), nil
 			}
 		}
 	}
-
 	for c := 0; c < 2; c++ {
 		if g.tokens[c] == "" && g.conns[c] == nil {
 			g.tokens[c] = token
 			g.conns[c] = conn
-			return domain.Color(c), g, nil
+			return domain.Color(c), nil
 		}
 	}
-	return 0, nil, ErrRoomFull
+	return 0, ErrRoomFull
 }
