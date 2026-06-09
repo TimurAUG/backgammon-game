@@ -1,5 +1,7 @@
 // FRONTEND_SPEC #7 — STATE обновляет board/turn/dice/borneOff/status/isFirstMove.
 // FRONTEND_SPEC #8 — LEGAL_MOVES обновляет legalMoves (пустой = ход пропускается).
+// FRONTEND_SPEC #9 — GAME_OVER ставит gameOver и status='finished'.
+// FRONTEND_SPEC #10 — ERROR не меняет state (логирование на стороне connectionStore).
 //
 // gameState — модульный runes-объект ($state в game.svelte.ts).
 // applyServerMessage — reducer-style action.
@@ -75,5 +77,72 @@ describe('applyServerMessage LEGAL_MOVES (#8)', () => {
     // Пустой LEGAL_MOVES сбрасывает (= ход пропускается на сервере).
     applyServerMessage({ type: 'LEGAL_MOVES', moves: [] })
     expect(gameState.legalMoves).toEqual([])
+  })
+})
+
+describe('applyServerMessage GAME_OVER (#9)', () => {
+  test('gameStore_onGAME_OVER_setsWinnerKindAndFinishedStatus', () => {
+    applyServerMessage({
+      type: 'GAME_OVER',
+      winner: 'black',
+      kind: 'koks',
+    })
+
+    expect(gameState.gameOver).toEqual({ winner: 'black', kind: 'koks' })
+    expect(gameState.status).toBe('finished')
+  })
+
+  test('gameStore_onGAME_OVER_doesNotTouchBoardOrLegalMoves', () => {
+    const board = Array(24).fill(0)
+    board[0] = 3
+    applyServerMessage({
+      type: 'STATE',
+      board,
+      turn: 'white',
+      status: 'waitingForMove',
+      borneOff: { white: 12, black: 0 },
+      isFirstMove: { white: false, black: false },
+    })
+    applyServerMessage({
+      type: 'LEGAL_MOVES',
+      moves: [{ from: 1, to: 0, pip: 1 }],
+    })
+
+    applyServerMessage({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
+
+    expect(gameState.board).toEqual(board)
+    expect(gameState.borneOff).toEqual({ white: 12, black: 0 })
+    expect(gameState.legalMoves).toEqual([{ from: 1, to: 0, pip: 1 }])
+    expect(gameState.gameOver).toEqual({ winner: 'white', kind: 'mars' })
+    expect(gameState.status).toBe('finished')
+  })
+})
+
+describe('applyServerMessage ERROR (#10)', () => {
+  test('gameStore_onERROR_doesNotMutateAnyField', () => {
+    const board = Array(24).fill(0)
+    board[23] = 15
+    applyServerMessage({
+      type: 'STATE',
+      board,
+      turn: 'white',
+      status: 'waitingForMove',
+      borneOff: { white: 1, black: 2 },
+      isFirstMove: { white: false, black: true },
+      dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
+    })
+    applyServerMessage({
+      type: 'LEGAL_MOVES',
+      moves: [{ from: 24, to: 21, pip: 3 }],
+    })
+    const snapshot = JSON.parse(JSON.stringify(gameState))
+
+    applyServerMessage({
+      type: 'ERROR',
+      code: 'RULE_OF_SIX',
+      message: 'финальный блок 6+ при пустом доме соперника',
+    })
+
+    expect(JSON.parse(JSON.stringify(gameState))).toEqual(snapshot)
   })
 })
