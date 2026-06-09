@@ -217,8 +217,9 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 - ✅ Этап 8 (#25–#28): конец игры (`WinKind`, `Winner` с разделением Oin/Mars/Koks)
 - ✅ Этап 9 (#29–#30): обязательные ходы (`CanUsePip` — база для приоритета бо́льшего и перехода хода)
 - ✅ Этап 10 (#31–#32): оркестрация (`GameState`, `Apply` обновляет `Remaining` через `Dice.Use`, `IsTurnComplete` через `CanUsePip`)
-- ⏳ **Этап 11 (#33–#37): транспорт и сессии** — закрыты #33 JOIN, #34 полный поток, #35 реконнект через token, #36 persistence через Postgres (Storage интерфейс, PostgresStorage с JSONB, auto-save после мутаций; тест через testcontainers). Остаётся: #37 auth
+- ✅ Этап 11 (#33–#37): транспорт и сессии. #33 JOIN, #34 полный поток ROLL_FOR_FIRST/ROLL/MOVE/LEGAL_MOVES/END_TURN/GAME_OVER/auto-END_TURN, #35 реконнект через token, #36 Postgres persistence (Storage интерфейс + PostgresStorage с JSONB + auto-save), #37 auth — Bearer-токен в Authorization-header WS-handshake (401 без upgrade при отсутствии).
 
+**Бонусы вне плана:** `cmd/server` (точка входа с выбором Storage по DATABASE_URL); LegalMoves DFS-lookahead (фильтрация ходов, ведущих к неизбежному блоку 6).
 
 ### Этап 1 — доска и расстановка
 1. `InitialBoard()` — 15 на 24 для белых, 15 на 12 для чёрных, остальное пусто.
