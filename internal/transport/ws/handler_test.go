@@ -319,6 +319,66 @@ func TestHandler_EndTurn_PassesTurn(t *testing.T) {
 	}
 }
 
+// TestHandler_Roll_StartsBlackTurn — после END_TURN белого, чёрный шлёт ROLL.
+// rng-байты [1, 3] → бросок (2, 4). Оба получают STATE с turn=black,
+// status=waitingForMove, dice=(2,4). Чёрный также получает LEGAL_MOVES
+// с двумя ходами с головы (правило головы разрешает первый ход с головы).
+//
+// TDD plan #34 (часть 7 — ROLL).
+func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
+	// 4 байта: 2 на ROLL_FOR_FIRST (white=5,black=3), 2 на ROLL чёрного (2,4).
+	rng := bytes.NewReader([]byte{4, 2, 1, 3})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+
+	// Завершить ход белого: MOVE 19→16 пипсом 3 + END_TURN.
+	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 19, To: 16})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES (пустой)
+
+	et, err := json.Marshal(protocol.ClientMessage{Type: "END_TURN"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, et))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+
+	// Black: ROLL
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, roll))
+
+	state1 := readMessage(t, ctx, conn1)
+	state2 := readMessage(t, ctx, conn2)
+	for _, s := range []protocol.ServerMessage{state1, state2} {
+		require.Equal(t, "STATE", s.Type)
+		require.Equal(t, "black", s.Turn)
+		require.Equal(t, "waitingForMove", s.Status)
+		require.NotNil(t, s.Dice)
+		require.Equal(t, uint8(2), s.Dice.A)
+		require.Equal(t, uint8(4), s.Dice.B)
+		require.Equal(t, []uint8{2, 4}, s.Dice.Remaining)
+	}
+
+	legal := readMessage(t, ctx, conn2)
+	require.Equal(t, "LEGAL_MOVES", legal.Type)
+	require.ElementsMatch(t, []protocol.MovePayload{
+		{From: 12, To: 10, Pip: 2},
+		{From: 12, To: 8, Pip: 4},
+	}, legal.Moves)
+}
+
 // playUntilFirstMove подключает двух клиентов, проходит JOIN/ROLL_FOR_FIRST
 // и выполняет первый ход 24→19 пипсом 5. Возвращает соединения готовые к
 // следующему сообщению белого. Соответствует rng[4,2].
