@@ -124,6 +124,7 @@ type Move struct {
 //
 // TDD plan #7, #8, #9, #10.
 func IsLegalStep(b Board, c Color, m Move) bool {
-	// Заглушка для red-стадии: тесты #7, #8 должны упасть.
-	return false
+	// Минимальная реализация для #7, #8: проверить направление и пипс.
+	// Владельца целевой клетки — добавим в #9, #10.
+	return m.To == NextPoint(c, m.From, m.Pip)
 }
