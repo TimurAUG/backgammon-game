@@ -7,6 +7,9 @@
 coverage.txt
 coverage.html
 
+# Локально собранные бинарники из cmd/* (если запускать `go build ./cmd/server` из корня)
+/server
+
 # Go module cache (when vendored)
 /vendor/
 
