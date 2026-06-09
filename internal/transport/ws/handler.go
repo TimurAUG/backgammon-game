@@ -90,6 +90,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch in.Type {
 		case "ROLL_FOR_FIRST":
 			_ = g.RollForFirst(color)
+		case "ROLL":
+			if err := g.Roll(color); err != nil {
+				code := "INVALID_STATE"
+				switch {
+				case errors.Is(err, game.ErrNotYourTurn):
+					code = "NOT_YOUR_TURN"
+				case errors.Is(err, game.ErrInvalidState):
+					code = "INVALID_STATE"
+				}
+				_ = pc.Send(protocol.ServerMessage{
+					Type: "ERROR", Code: code, Message: err.Error(),
+				})
+			}
 		case "MOVE":
 			if err := g.HandleMove(color, in.From, in.To); err != nil {
 				_ = pc.Send(protocol.ServerMessage{

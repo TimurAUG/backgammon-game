@@ -36,6 +36,10 @@ var ErrNotYourTurn = errors.New("not your turn")
 // правило шести (блок 6+ у игрока + соперник 0 в своём доме).
 var ErrRuleOfSix = errors.New("rule of six violation")
 
+// ErrInvalidState возвращается, если действие не подходит к текущему
+// статусу партии (например, ROLL при WaitingForMove).
+var ErrInvalidState = errors.New("invalid state")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -134,6 +138,34 @@ func findPipFor(s domain.GameState, from, to domain.Point) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+// Roll бросает два кубика для игрока цвета c через rng и устанавливает
+// Status в WaitingForMove. Допустим только если c == Turn и Status ==
+// WaitingForRoll.
+//
+// После броска рассылает STATE обоим и LEGAL_MOVES активному.
+//
+// TDD plan #34 (часть 7 — ROLL).
+func (g *Game) Roll(c domain.Color) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.State.Turn != c {
+		return ErrNotYourTurn
+	}
+	if g.State.Status != domain.StatusWaitingForRoll {
+		return ErrInvalidState
+	}
+	dice, err := domain.RollDice(g.rng)
+	if err != nil {
+		return err
+	}
+	g.State.Dice = dice
+	g.State.Status = domain.StatusWaitingForMove
+	g.broadcastStateLocked()
+	g.sendLegalMovesLocked(c)
+	return nil
 }
 
 // EndTurn передаёт ход сопернику.
