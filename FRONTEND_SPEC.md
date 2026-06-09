@@ -190,7 +190,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 
 ## 9. Открытые вопросы
 
-1. **STATE неполный на бекенде.** `internal/protocol/messages.go` → `ServerMessage` не содержит `borneOff` и `isFirstMove`, хотя оба указаны в `nardy-protocol/SKILL.md` и `SPEC.md` § 4. Поправить в бекенде отдельным TDD-циклом до старта Этапа 3 фронта (иначе store не сможет читать эти поля). Возможно — то же касается формирования STATE в `internal/transport/ws/handler.go`.
+1. ~~**STATE неполный на бекенде.**~~ ✅ **Закрыто.** `ServerMessage` получил `BorneOffPayload` и `IsFirstMovePayload`; `game.StateMessage` заполняет оба поля из доменного состояния. Этап 3 фронта (gameStore) разблокирован.
 2. **REST для invite-флоу.** Сейчас `gameId` и `token` вводятся вручную в Connect. Когда появится REST (создание игры, генерация приглашения) — Connect заменится на «Создать игру» / «Войти по ссылке».
 3. **Drag&drop.** В MVP не входит — только клики. Решить, делать ли HTML5 drag, pointer events или библиотеку, когда возьмём цикл.
 4. **i18n.** Пока — только русский, без обёрток. Когда добавим английский — ввести `t()` и каталоги.
