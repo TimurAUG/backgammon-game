@@ -20,8 +20,14 @@ type Dice struct {
 //
 // TDD plan #11.
 func NewDice(a, b uint8) Dice {
-	// Заглушка для red-стадии: тесты #11 должны упасть.
-	return Dice{}
+	isDouble := a == b
+	var remaining []uint8
+	if isDouble {
+		remaining = []uint8{a, a, a, a}
+	} else {
+		remaining = []uint8{a, b}
+	}
+	return Dice{A: a, B: b, IsDouble: isDouble, Remaining: remaining}
 }
 
 // Use возвращает новый Dice, в котором один пипс заданного значения убран
@@ -32,6 +38,19 @@ func NewDice(a, b uint8) Dice {
 //
 // TDD plan #12.
 func (d Dice) Use(pip uint8) Dice {
-	// Заглушка для red-стадии: тест #12 должен упасть.
+	for i, p := range d.Remaining {
+		if p != pip {
+			continue
+		}
+		newRemaining := make([]uint8, 0, len(d.Remaining)-1)
+		newRemaining = append(newRemaining, d.Remaining[:i]...)
+		newRemaining = append(newRemaining, d.Remaining[i+1:]...)
+		return Dice{
+			A:         d.A,
+			B:         d.B,
+			IsDouble:  d.IsDouble,
+			Remaining: newRemaining,
+		}
+	}
 	return d
 }
