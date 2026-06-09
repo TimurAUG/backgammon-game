@@ -28,3 +28,27 @@ func TestHeadMoveAllowed_OnePerRegularTurn(t *testing.T) {
 		})
 	}
 }
+
+// TestHeadMoveAllowed_FirstMoveDoubleException проверяет исключение
+// правила головы: на первом ходу партии при дубле 6:6, 4:4 или 3:3
+// разрешено снять с головы вторую шашку.
+//
+// TDD plan #14, #15.
+func TestHeadMoveAllowed_FirstMoveDoubleException(t *testing.T) {
+	cases := []struct {
+		name     string
+		consumed uint8
+		dice     Dice
+		first    bool
+		want     bool
+	}{
+		{"первый ход, дубль 6:6, 1 снято → можно", 1, NewDice(6, 6), true, true}, // #14
+		{"первый ход, дубль 4:4, 1 снято → можно", 1, NewDice(4, 4), true, true}, // #15
+		{"первый ход, дубль 3:3, 1 снято → можно", 1, NewDice(3, 3), true, true}, // #15
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, HeadMoveAllowed(tc.consumed, tc.dice, tc.first))
+		})
+	}
+}
