@@ -127,3 +127,46 @@ func TestIsLegalStep_LegalTargets(t *testing.T) {
 		})
 	}
 }
+
+// TestIsLegalStep_IllegalTargets проверяет нелегальные шаги:
+// на клетку противника и не в свою сторону.
+//
+// TDD plan #9, #10.
+func TestIsLegalStep_IllegalTargets(t *testing.T) {
+	cases := []struct {
+		name  string
+		board Board
+		color Color
+		move  Move
+	}{
+		{
+			name:  "белый 24→18 пипсом 6, на цели чёрные — нельзя на чужую",
+			board: setBoard(map[Point]int8{18: -3}),
+			color: White,
+			move:  Move{From: 24, To: 18, Pip: 6},
+		}, // #9
+		{
+			name:  "чёрный 12→6 пипсом 6, на цели белые — нельзя на чужую",
+			board: setBoard(map[Point]int8{6: 3}),
+			color: Black,
+			move:  Move{From: 12, To: 6, Pip: 6},
+		}, // #9 симметрично
+		{
+			name:  "белый 18→19 пипсом 1 — назад против направления",
+			board: setBoard(map[Point]int8{18: 1}),
+			color: White,
+			move:  Move{From: 18, To: 19, Pip: 1},
+		}, // #10
+		{
+			name:  "чёрный 11→12 пипсом 1 — назад против направления",
+			board: setBoard(map[Point]int8{11: -1}),
+			color: Black,
+			move:  Move{From: 11, To: 12, Pip: 1},
+		}, // #10 симметрично
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.False(t, IsLegalStep(tc.board, tc.color, tc.move))
+		})
+	}
+}
