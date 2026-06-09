@@ -36,14 +36,12 @@ func NewHandler(mgr *game.Manager) *Handler {
 // ServeHTTP принимает WS-соединение, читает первое сообщение JOIN, регистрирует
 // клиента в игре и держит соединение в read-loop до закрытия.
 //
-// Авторизация: токен берётся из Authorization: Bearer-заголовка handshake-запроса.
-// Если токена нет — отвечаем 401 без upgrade.
+// Авторизация: токен берётся из Authorization: Bearer-заголовка handshake-запроса,
+// а при его отсутствии — из поля token сообщения JOIN (браузерный WebSocket
+// не умеет ставить заголовки). Если токена нет ни там, ни там — ERROR
+// UNAUTHORIZED по WS.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token := extractBearerToken(r.Header.Get("Authorization"))
-	if token == "" {
-		http.Error(w, "missing or invalid Authorization header", http.StatusUnauthorized)
-		return
-	}
 
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -66,6 +64,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg.Type != "JOIN" {
 		_ = pc.Send(protocol.ServerMessage{Type: "ERROR", Code: "INVALID_STATE", Message: "expected JOIN"})
+		return
+	}
+
+	if token == "" {
+		token = msg.Token
+	}
+	if token == "" {
+		_ = pc.Send(protocol.ServerMessage{Type: "ERROR", Code: "UNAUTHORIZED", Message: "missing token"})
 		return
 	}
 
