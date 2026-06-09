@@ -1,5 +1,7 @@
 // WSClient — клиент WebSocket-канала. Сериализует ClientMessage,
-// парсит ServerMessage, нотифицирует подписчиков.
+// парсит ServerMessage, нотифицирует подписчиков, переподключается
+// с экспоненциальным backoff, после каждого open автоматически
+// шлёт JOIN с конфиг-кредами.
 //
 // WebSocket-конструктор передаётся через DI (опционально); в проде
 // используется глобальный WebSocket, в тестах — MockWebSocket.
@@ -30,10 +32,15 @@ export interface WSClientConfig {
 }
 
 const OPEN = 1
+const BACKOFF_BASE_MS = 1000
+const BACKOFF_CAP_MS = 30000
 
 export class WSClient {
   private socket: WSConnection | null = null
   private listeners: Array<(msg: ServerMessage) => void> = []
+  private stopped = false
+  private attempts = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly config: WSClientConfig,
@@ -41,9 +48,9 @@ export class WSClient {
   ) {}
 
   connect(): void {
-    const socket = new this.wsCtor(this.config.url)
-    socket.onmessage = (ev) => this.handleMessage(ev.data)
-    this.socket = socket
+    this.stopped = false
+    this.attempts = 0
+    this.openSocket()
   }
 
   send(msg: ClientMessage): void {
@@ -58,6 +65,44 @@ export class WSClient {
     return () => {
       this.listeners = this.listeners.filter((l) => l !== cb)
     }
+  }
+
+  close(): void {
+    this.stopped = true
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.socket?.close()
+  }
+
+  private openSocket(): void {
+    const socket = new this.wsCtor(this.config.url)
+    socket.onopen = () => {
+      this.attempts = 0
+      socket.send(
+        serializeClientMessage({
+          type: 'JOIN',
+          gameId: this.config.gameId,
+          token: this.config.token,
+        }),
+      )
+    }
+    socket.onclose = () => {
+      if (this.stopped) return
+      this.scheduleReconnect()
+    }
+    socket.onmessage = (ev) => this.handleMessage(ev.data)
+    this.socket = socket
+  }
+
+  private scheduleReconnect(): void {
+    const delay = Math.min(BACKOFF_BASE_MS * Math.pow(2, this.attempts), BACKOFF_CAP_MS)
+    this.attempts++
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.openSocket()
+    }, delay)
   }
 
   private handleMessage(data: unknown): void {
