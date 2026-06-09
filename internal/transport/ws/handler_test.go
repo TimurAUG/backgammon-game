@@ -1,6 +1,7 @@
 package ws_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -96,4 +97,49 @@ func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) protoc
 	var msg protocol.ServerMessage
 	require.NoError(t, json.Unmarshal(data, &msg))
 	return msg
+}
+
+// TestHandler_RollForFirst — оба клиента шлют ROLL_FOR_FIRST. Сервер,
+// получив сигнал от обоих, делает броски через rng в порядке (white, black).
+// При rng [4, 2] → white=5, black=3 → white побеждает, dice=(5, 3).
+// Оба клиента получают STATE с turn=white, status=waitingForMove и Dice.
+//
+// TDD plan #34 (часть 2).
+func TestHandler_RollForFirst(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1) // STATE при JOIN
+
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE при JOIN
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+
+	state1 := readMessage(t, ctx, conn1)
+	state2 := readMessage(t, ctx, conn2)
+
+	for _, s := range []protocol.ServerMessage{state1, state2} {
+		require.Equal(t, "STATE", s.Type)
+		require.Equal(t, "white", s.Turn)
+		require.Equal(t, "waitingForMove", s.Status)
+		require.NotNil(t, s.Dice)
+		require.Equal(t, uint8(5), s.Dice.A)
+		require.Equal(t, uint8(3), s.Dice.B)
+		require.False(t, s.Dice.IsDouble)
+		require.Equal(t, []uint8{5, 3}, s.Dice.Remaining)
+	}
 }
