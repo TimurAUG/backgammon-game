@@ -1,7 +1,7 @@
 <script lang="ts">
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
-  import { clearCredentials, type Credentials } from './lib/credentials'
+  import { clearCredentials, loadCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage } from './protocol/messages'
   import { applyServerMessage, resetGameState } from './stores/game.svelte'
   import { WSClient } from './transport/ws'
@@ -40,6 +40,11 @@
     clearCredentials()
     resetGameState()
   }
+
+  // Авто-подключение: при сохранённых кредах минуем Connect и сразу
+  // открываем сессию — сервер вернёт текущий STATE (FRONTEND_SPEC #24c).
+  const saved = loadCredentials()
+  if (saved !== null) startSession(saved)
 </script>
 
 {#if client === null}
