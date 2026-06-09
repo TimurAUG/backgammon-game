@@ -65,3 +65,58 @@ func TestGame_EndTurn_RejectsSixBlockViolation(t *testing.T) {
 	require.ErrorIs(t, err, game.ErrRuleOfSix)
 	require.Equal(t, domain.White, g.State.Turn, "Turn не должен переключаться при отказе")
 }
+
+// TestGame_HandleMove_TriggersGameOverMars — выкид последней (15-й) шашки
+// белого. У чёрного BorneOff=0 и нет шашек ни в доме белых (1..6), ни на
+// голове белых (24) → марс.
+//
+// Сервер должен разослать обоим STATE и GAME_OVER{winner=white, kind=mars},
+// а Status перейти в Finished. LEGAL_MOVES не отправляется.
+func TestGame_HandleMove_TriggersGameOverMars(t *testing.T) {
+	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
+	white := &mockConn{}
+	black := &mockConn{}
+	_, _, err := mgr.JoinGame("g1", white)
+	require.NoError(t, err)
+	_, g, err := mgr.JoinGame("g1", black)
+	require.NoError(t, err)
+
+	var b domain.Board
+	b[0] = 1   // 1 белая на пункте 1 (последняя, всё остальное уже выкинуто)
+	b[11] = -10 // 10 чёрных на пункте 12 (вне дома белых и не на 24)
+
+	g.State = domain.GameState{
+		Board:    b,
+		Turn:     domain.White,
+		Dice:     domain.NewDice(1, 2),
+		BorneOff: [2]uint8{14, 0},
+		Status:   domain.StatusWaitingForMove,
+	}
+
+	err = g.HandleMove(domain.White, 1, 0)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusFinished, g.State.Status)
+
+	gameOver := findMessage(white.Messages(), "GAME_OVER")
+	require.NotNil(t, gameOver, "white должен получить GAME_OVER")
+	require.Equal(t, "white", gameOver.Winner)
+	require.Equal(t, "mars", gameOver.Kind)
+
+	gameOverBlack := findMessage(black.Messages(), "GAME_OVER")
+	require.NotNil(t, gameOverBlack, "black должен получить GAME_OVER")
+	require.Equal(t, "white", gameOverBlack.Winner)
+	require.Equal(t, "mars", gameOverBlack.Kind)
+
+	// LEGAL_MOVES не должно прийти.
+	require.Nil(t, findMessage(white.Messages(), "LEGAL_MOVES"),
+		"LEGAL_MOVES после GAME_OVER не отправляется")
+}
+
+func findMessage(msgs []protocol.ServerMessage, typ string) *protocol.ServerMessage {
+	for i := range msgs {
+		if msgs[i].Type == typ {
+			return &msgs[i]
+		}
+	}
+	return nil
+}
