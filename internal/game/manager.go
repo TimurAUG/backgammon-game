@@ -24,6 +24,14 @@ type Conn interface {
 // игрока.
 var ErrRoomFull = errors.New("room full")
 
+// ErrMustUsePip возвращается из EndTurn, если у текущего игрока ещё есть
+// пипсы, которые можно использовать.
+var ErrMustUsePip = errors.New("must use pip")
+
+// ErrNotYourTurn возвращается из методов хода, если действие пришло не от
+// игрока, чей сейчас ход.
+var ErrNotYourTurn = errors.New("not your turn")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -71,7 +79,7 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 	defer g.mu.Unlock()
 
 	if g.State.Turn != c {
-		return errors.New("not your turn")
+		return ErrNotYourTurn
 	}
 	pip, ok := findPipFor(g.State, domain.Point(from), domain.Point(to))
 	if !ok {
@@ -122,6 +130,51 @@ func findPipFor(s domain.GameState, from, to domain.Point) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+// EndTurn передаёт ход сопернику.
+//
+// Если у текущего игрока ещё остались пипсы, которые можно использовать
+// (см. domain.IsTurnComplete), возвращает ErrMustUsePip.
+//
+// При успехе обнуляет HeadConsumed, сбрасывает Dice, ставит Status в
+// StatusWaitingForRoll, переключает Turn и помечает IsFirstMove[c] = false.
+// Рассылает STATE обоим клиентам.
+//
+// Правило шести (SixBlockAllowed на финальной позиции) на этом этапе НЕ
+// проверяется — будет добавлено следующим циклом (закрытие #20).
+//
+// TDD plan #34 (часть 5).
+func (g *Game) EndTurn(c domain.Color) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.State.Turn != c {
+		return ErrNotYourTurn
+	}
+	if !domain.IsTurnComplete(g.State) {
+		return ErrMustUsePip
+	}
+
+	next := domain.Black
+	if c == domain.Black {
+		next = domain.White
+	}
+
+	isFirstMove := g.State.IsFirstMove
+	isFirstMove[c] = false
+
+	g.State = domain.GameState{
+		Board:        g.State.Board,
+		Turn:         next,
+		Dice:         domain.Dice{},
+		BorneOff:     g.State.BorneOff,
+		Status:       domain.StatusWaitingForRoll,
+		HeadConsumed: [2]uint8{},
+		IsFirstMove:  isFirstMove,
+	}
+	g.broadcastStateLocked()
+	return nil
 }
 
 // RollForFirst обрабатывает сигнал «готов» от игрока c в фазе определения

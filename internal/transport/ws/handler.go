@@ -96,6 +96,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Type: "ERROR", Code: "INVALID_MOVE", Message: err.Error(),
 				})
 			}
+		case "END_TURN":
+			if err := g.EndTurn(color); err != nil {
+				code := "INVALID_STATE"
+				switch {
+				case errors.Is(err, game.ErrMustUsePip):
+					code = "MUST_USE_PIP"
+				case errors.Is(err, game.ErrNotYourTurn):
+					code = "NOT_YOUR_TURN"
+				}
+				_ = pc.Send(protocol.ServerMessage{
+					Type: "ERROR", Code: code, Message: err.Error(),
+				})
+			}
 		default:
 			_ = pc.Send(protocol.ServerMessage{
 				Type: "ERROR", Code: "INVALID_STATE",
