@@ -105,6 +105,55 @@ func TestHandler_UnauthorizedWithoutAnyToken(t *testing.T) {
 	require.Equal(t, "UNAUTHORIZED", msg.Code, "JOIN без токена должен отклоняться как UNAUTHORIZED")
 }
 
+// TestHandler_JoinSendsJoinedWithColor — после успешного JOIN сервер шлёт
+// присоединившемуся JOINED с его цветом, до STATE: первый клиент — white,
+// второй — black. STATE одинаков для обоих игроков, так что иначе клиенту
+// неоткуда узнать, каким цветом он играет.
+//
+// Подготовка к web#24 (FRONTEND_SPEC, Этап 8).
+func TestHandler_JoinSendsJoinedWithColor(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	dialJoin := func(token string) *websocket.Conn {
+		conn, _, err := websocket.Dial(ctx, wsURL, nil)
+		require.NoError(t, err)
+		raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: "g-joined", Token: token})
+		require.NoError(t, err)
+		require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+		return conn
+	}
+	// Анонимная структура вместо protocol.ServerMessage — фиксируем
+	// JSON-контракт (имя поля color), а не Go-структуру.
+	readTypeColor := func(conn *websocket.Conn) (string, string) {
+		_, data, err := conn.Read(ctx)
+		require.NoError(t, err)
+		var parsed struct {
+			Type  string `json:"type"`
+			Color string `json:"color"`
+		}
+		require.NoError(t, json.Unmarshal(data, &parsed))
+		return parsed.Type, parsed.Color
+	}
+
+	conn1 := dialJoin("t-first")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	typ1, color1 := readTypeColor(conn1)
+	require.Equal(t, "JOINED", typ1, "первое сообщение после JOIN — JOINED, до STATE")
+	require.Equal(t, "white", color1, "первый подключившийся играет белыми")
+
+	conn2 := dialJoin("t-second")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	typ2, color2 := readTypeColor(conn2)
+	require.Equal(t, "JOINED", typ2, "второй клиент тоже получает JOINED до STATE")
+	require.Equal(t, "black", color2, "второй подключившийся играет чёрными")
+}
+
 // TestHandler_SecondJoinNotifiesFirst — интеграционный тест на два клиента
 // в одной игре: второй JOIN → второй получает STATE; первый клиент,
 // уже ожидавший в read-loop, получает OPPONENT_JOINED.
