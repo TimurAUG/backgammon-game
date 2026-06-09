@@ -90,3 +90,61 @@ func TestCanUsePip_NoneOfPair_TurnPasses(t *testing.T) {
 		})
 	}
 }
+
+// TestLegalMoves покрывает базовую сборку списка легальных одиночных шагов:
+// шаги и выкиды для каждого пипса из Remaining, дедупликация. Правило головы
+// и правило шести на этом уровне не учитываются — это уровни выше.
+//
+// Подготовка к #34 (LEGAL_MOVES в WS-протоколе).
+func TestLegalMoves(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func() GameState
+		want  []Move
+	}{
+		{
+			name: "initial board, белые [5,3]: 24→19 пипсом 5 и 24→21 пипсом 3",
+			setup: func() GameState {
+				return GameState{
+					Board: InitialBoard(),
+					Turn:  White,
+					Dice:  NewDice(5, 3),
+				}
+			},
+			want: []Move{
+				{From: 24, To: 19, Pip: 5},
+				{From: 24, To: 21, Pip: 3},
+			},
+		},
+		{
+			name: "белая на 10 + блоки на 4 и 5, [5,6]: пустой список",
+			setup: func() GameState {
+				var b Board
+				b[9] = 1
+				b[3] = -1
+				b[4] = -1
+				return GameState{Board: b, Turn: White, Dice: NewDice(5, 6)}
+			},
+			want: []Move{},
+		},
+		{
+			name: "одна белая на 3 (все в доме), [3,4]: выкид с 3 точным и переборным",
+			setup: func() GameState {
+				var b Board
+				b[2] = 1
+				return GameState{Board: b, Turn: White, Dice: NewDice(3, 4)}
+			},
+			want: []Move{
+				{From: 3, To: 0, Pip: 3},
+				{From: 3, To: 0, Pip: 4},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.setup()
+			moves := LegalMoves(s)
+			require.ElementsMatch(t, tc.want, moves)
+		})
+	}
+}
