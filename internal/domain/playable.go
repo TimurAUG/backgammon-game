@@ -50,3 +50,46 @@ func hasCheckerOf(b Board, c Color, p Point) bool {
 	}
 	return false
 }
+
+// LegalMoves возвращает список легальных одиночных шагов игрока s.Turn при
+// текущей доске и оставшихся пипсах s.Dice.Remaining.
+//
+// Каждый Move — это либо обычный шаг (To != 0) с легальным IsLegalStep,
+// либо выкид (To == 0) с легальным IsLegalBearOff. Дубли по тройке
+// (From, To, Pip) удаляются — при дубле в Remaining повторяющиеся пипсы
+// порождали бы одинаковые ходы.
+//
+// Не учитывает правило головы и правило шести — это уровни выше
+// (handler MOVE/END_TURN).
+//
+// Подготовка к #34 (LEGAL_MOVES в WS-протоколе).
+func LegalMoves(s GameState) []Move {
+	seen := map[Move]bool{}
+	moves := make([]Move, 0)
+	for _, pip := range s.Dice.Remaining {
+		for from := Point(1); from <= 24; from++ {
+			if !hasCheckerOf(s.Board, s.Turn, from) {
+				continue
+			}
+			next := NextPoint(s.Turn, from, pip)
+			var m Move
+			if next == 0 {
+				if !IsLegalBearOff(s.Board, s.Turn, from, pip) {
+					continue
+				}
+				m = Move{From: from, To: 0, Pip: pip}
+			} else {
+				m = Move{From: from, To: next, Pip: pip}
+				if !IsLegalStep(s.Board, s.Turn, m) {
+					continue
+				}
+			}
+			if seen[m] {
+				continue
+			}
+			seen[m] = true
+			moves = append(moves, m)
+		}
+	}
+	return moves
+}
