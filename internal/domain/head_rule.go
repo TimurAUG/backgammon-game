@@ -20,10 +20,12 @@ func HeadMoveAllowed(consumedThisTurn uint8, dice Dice, isFirstMove bool) bool {
 	if consumedThisTurn == 0 {
 		return true
 	}
-	// Исключение для #14, #15: на первом ходу при любом дубле — можно вторую.
-	// Сузим до {6, 4, 3} в #16.
+	// Исключение: только на первом ходу партии и только дубли 6:6, 4:4, 3:3.
 	if consumedThisTurn == 1 && isFirstMove && dice.IsDouble {
-		return true
+		switch dice.A {
+		case 6, 4, 3:
+			return true
+		}
 	}
 	return false
 }
