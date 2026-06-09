@@ -104,6 +104,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					code = "MUST_USE_PIP"
 				case errors.Is(err, game.ErrNotYourTurn):
 					code = "NOT_YOUR_TURN"
+				case errors.Is(err, game.ErrRuleOfSix):
+					code = "RULE_OF_SIX"
 				}
 				_ = pc.Send(protocol.ServerMessage{
 					Type: "ERROR", Code: code, Message: err.Error(),

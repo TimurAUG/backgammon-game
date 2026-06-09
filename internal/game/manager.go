@@ -32,6 +32,10 @@ var ErrMustUsePip = errors.New("must use pip")
 // игрока, чей сейчас ход.
 var ErrNotYourTurn = errors.New("not your turn")
 
+// ErrRuleOfSix возвращается из EndTurn, если финальная позиция нарушает
+// правило шести (блок 6+ у игрока + соперник 0 в своём доме).
+var ErrRuleOfSix = errors.New("rule of six violation")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -154,6 +158,9 @@ func (g *Game) EndTurn(c domain.Color) error {
 	}
 	if !domain.IsTurnComplete(g.State) {
 		return ErrMustUsePip
+	}
+	if !domain.SixBlockAllowed(g.State.Board, c) {
+		return ErrRuleOfSix
 	}
 
 	next := domain.Black
