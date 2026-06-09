@@ -29,6 +29,11 @@
 </script>
 
 <main class="game">
+  <header class="toolbar">
+    <button type="button" class="leave" data-testid="switch-game" onclick={onNewGame}>
+      Сменить игру
+    </button>
+  </header>
   <Board
     board={gameState.board}
     legalMoves={gameState.legalMoves}
@@ -65,5 +70,22 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+  }
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .leave {
+    background: transparent;
+    color: #5a3a1e;
+    border: 1px solid #5a3a1e;
+    border-radius: 6px;
+    padding: 0.35rem 0.75rem;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .leave:hover {
+    background: #e7c79b;
   }
 </style>
