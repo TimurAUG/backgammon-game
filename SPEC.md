@@ -217,7 +217,7 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 - ✅ Этап 8 (#25–#28): конец игры (`WinKind`, `Winner` с разделением Oin/Mars/Koks)
 - ✅ Этап 9 (#29–#30): обязательные ходы (`CanUsePip` — база для приоритета бо́льшего и перехода хода)
 - ✅ Этап 10 (#31–#32): оркестрация (`GameState`, `Apply` обновляет `Remaining` через `Dice.Use`, `IsTurnComplete` через `CanUsePip`)
-- ⏳ **Этап 11 (#33–#37): транспорт и сессии** — #33 и #34 (полный поток) закрыты: JOIN, OPPONENT_JOINED, ROLL_FOR_FIRST, ROLL, LEGAL_MOVES, MOVE, END_TURN с MUST_USE_PIP/RULE_OF_SIX, GAME_OVER, auto-END_TURN при пустом LegalMoves. Остаются: #35 реконнект, #36 Postgres, #37 auth
+- ⏳ **Этап 11 (#33–#37): транспорт и сессии** — закрыты #33 JOIN, #34 полный поток (ROLL_FOR_FIRST/ROLL/MOVE/LEGAL_MOVES/END_TURN/GAME_OVER/auto-END_TURN), #35 реконнект через token. Остаются: #36 Postgres, #37 auth
 
 
 ### Этап 1 — доска и расстановка
