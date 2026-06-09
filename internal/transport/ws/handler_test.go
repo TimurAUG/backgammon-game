@@ -143,3 +143,46 @@ func TestHandler_RollForFirst(t *testing.T) {
 		require.Equal(t, []uint8{5, 3}, s.Dice.Remaining)
 	}
 }
+
+// TestHandler_LegalMovesAfterRollForFirst — после определения первого хода
+// победитель (white при rng [4,2]) получает кроме STATE ещё и LEGAL_MOVES
+// со списком одиночных ходов с учётом текущих пипсов.
+//
+// initial board, dice (5, 3): белый может только с 24 — 24→19 пипсом 5,
+// 24→21 пипсом 3.
+//
+// TDD plan #34 (часть 3).
+func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1) // STATE при JOIN
+
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE при JOIN
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+
+	_ = readMessage(t, ctx, conn1) // STATE после определения первого
+	_ = readMessage(t, ctx, conn2) // STATE после определения первого
+
+	legalMoves := readMessage(t, ctx, conn1)
+	require.Equal(t, "LEGAL_MOVES", legalMoves.Type)
+	require.ElementsMatch(t, []protocol.MovePayload{
+		{From: 24, To: 19, Pip: 5},
+		{From: 24, To: 21, Pip: 3},
+	}, legalMoves.Moves)
+}
