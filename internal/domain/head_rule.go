@@ -17,7 +17,13 @@ package domain
 //
 // TDD plan #13–#17.
 func HeadMoveAllowed(consumedThisTurn uint8, dice Dice, isFirstMove bool) bool {
-	// Минимум для #13: с головы за обычный ход — только одна.
-	// Исключение для дублей добавим в #14, #15.
-	return consumedThisTurn == 0
+	if consumedThisTurn == 0 {
+		return true
+	}
+	// Исключение для #14, #15: на первом ходу при любом дубле — можно вторую.
+	// Сузим до {6, 4, 3} в #16.
+	if consumedThisTurn == 1 && isFirstMove && dice.IsDouble {
+		return true
+	}
+	return false
 }
