@@ -27,6 +27,7 @@ export type ErrorCode =
   | 'INVALID_STATE'
   | 'GAME_NOT_FOUND'
   | 'UNAUTHORIZED'
+  | 'ROOM_FULL'
 
 export interface Dice {
   a: number
@@ -42,6 +43,7 @@ export interface Move {
 }
 
 export type ServerMessage =
+  | { type: 'JOINED'; color: Color }
   | {
       type: 'STATE'
       board: number[]

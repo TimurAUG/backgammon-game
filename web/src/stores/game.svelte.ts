@@ -16,6 +16,7 @@ export interface GameStoreState {
   dice: Dice | null
   legalMoves: Move[]
   gameOver: { winner: Color; kind: WinKind } | null
+  myColor: Color | null
 }
 
 function initialGameState(): GameStoreState {
@@ -28,6 +29,7 @@ function initialGameState(): GameStoreState {
     dice: null,
     legalMoves: [],
     gameOver: null,
+    myColor: null,
   }
 }
 
@@ -39,6 +41,9 @@ export function resetGameState(): void {
 
 export function applyServerMessage(msg: ServerMessage): void {
   switch (msg.type) {
+    case 'JOINED':
+      gameState.myColor = msg.color
+      break
     case 'STATE':
       gameState.board = msg.board
       gameState.turn = msg.turn
