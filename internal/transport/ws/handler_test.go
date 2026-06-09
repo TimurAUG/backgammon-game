@@ -74,8 +74,10 @@ func TestHandler_JoinTokenFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
 
+	joined := readMessage(t, ctx, conn)
+	require.Equal(t, "JOINED", joined.Type, "JOIN с token в payload должен регистрировать игрока")
 	msg := readMessage(t, ctx, conn)
-	require.Equal(t, "STATE", msg.Type, "JOIN с token в payload должен регистрировать игрока")
+	require.Equal(t, "STATE", msg.Type, "после JOINED приходит снапшот STATE")
 }
 
 // TestHandler_UnauthorizedWithoutAnyToken — нет ни Authorization-заголовка,
@@ -517,8 +519,11 @@ func TestHandler_Reconnect(t *testing.T) {
 }
 
 // dialAndJoinWithToken подключается с явно заданным токеном в
-// Authorization: Bearer-заголовке. JOIN-сообщение токен больше не несёт
-// (по SPEC #37).
+// Authorization: Bearer-заголовке. JOIN-сообщение токен не несёт
+// (по SPEC #37 заголовок — основной путь для не-браузерных клиентов).
+//
+// Съедает ответное JOINED, чтобы тесты дальше читали с STATE — так
+// сценарии, которым цвет не важен, не зашумляются лишним readMessage.
 func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, token string) *websocket.Conn {
 	t.Helper()
 	opts := &websocket.DialOptions{
@@ -531,6 +536,9 @@ func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, toke
 	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: gameID})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+
+	joined := readMessage(t, ctx, conn)
+	require.Equal(t, "JOINED", joined.Type, "после JOIN первым приходит JOINED")
 	return conn
 }
 

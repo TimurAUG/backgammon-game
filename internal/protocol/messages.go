@@ -53,6 +53,7 @@ type IsFirstMovePayload struct {
 // будет разнести на отдельные типы с json.RawMessage payload.
 type ServerMessage struct {
 	Type        string              `json:"type"`
+	Color       string              `json:"color,omitempty"` // JOINED: цвет присоединившегося
 	Board       []int8              `json:"board,omitempty"`
 	Turn        string              `json:"turn,omitempty"`
 	Status      string              `json:"status,omitempty"`

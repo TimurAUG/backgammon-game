@@ -407,6 +407,13 @@ func (g *Game) autoEndTurnLocked(c domain.Color) {
 	g.broadcastStateLocked()
 }
 
+// JoinedMessage собирает JOINED-сообщение — ответ присоединившемуся
+// клиенту с его цветом. Шлётся до STATE: из STATE цвет не узнать,
+// он одинаков для обоих игроков.
+func JoinedMessage(c domain.Color) protocol.ServerMessage {
+	return protocol.ServerMessage{Type: "JOINED", Color: colorString(c)}
+}
+
 // StateMessage конвертирует доменное состояние в STATE-сообщение протокола.
 func StateMessage(s domain.GameState) protocol.ServerMessage {
 	board := make([]int8, len(s.Board))

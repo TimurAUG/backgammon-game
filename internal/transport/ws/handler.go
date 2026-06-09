@@ -86,6 +86,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer g.Detach(color)
 
+	if err := pc.Send(game.JoinedMessage(color)); err != nil {
+		return
+	}
 	if err := pc.Send(game.StateMessage(g.State)); err != nil {
 		return
 	}
