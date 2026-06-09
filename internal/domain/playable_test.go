@@ -1,0 +1,92 @@
+package domain
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestCanUsePip_OnlyLargerOfPair демонстрирует правило #29: если из пары
+// пипсов используется только бо́льший — игрок обязан использовать его.
+// Проверяем через явную пару значений CanUsePip:
+// CanUsePip(bigger) == true, CanUsePip(smaller) == false.
+//
+// TDD plan #29.
+func TestCanUsePip_OnlyLargerOfPair(t *testing.T) {
+	cases := []struct {
+		name    string
+		setup   func(b *Board)
+		color   Color
+		bigger  uint8
+		smaller uint8
+	}{
+		{
+			// Белая на 10; чёрная блокирует пункт 5 (цель пипса 5).
+			// Пипс 6: 10→4 (пусто) — легален.
+			// Пипс 5: 10→5 (блок чёрной) — нелегален.
+			name:    "белые: шашка на 10, блок чёрного на 5 → пипс 5 нельзя, 6 можно",
+			setup:   func(b *Board) { b[9] = 1; b[4] = -1 },
+			color:   White,
+			bigger:  6,
+			smaller: 5,
+		},
+		{
+			// Чёрная на 11; белая блокирует пункт 6 (цель пипса 5).
+			// Пипс 6: 11→5 (пусто) — легален.
+			// Пипс 5: 11→6 (блок белой) — нелегален.
+			name:    "чёрные: шашка на 11, блок белого на 6 → пипс 5 нельзя, 6 можно",
+			setup:   func(b *Board) { b[10] = -1; b[5] = 1 },
+			color:   Black,
+			bigger:  6,
+			smaller: 5,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b Board
+			tc.setup(&b)
+			require.True(t, CanUsePip(b, tc.color, tc.bigger), "бо́льший пипс должен быть доступен")
+			require.False(t, CanUsePip(b, tc.color, tc.smaller), "меньший пипс должен быть недоступен")
+		})
+	}
+}
+
+// TestCanUsePip_NoneOfPair_TurnPasses демонстрирует правило #30: если ни
+// один пипс из пары не используется — ход переходит сопернику. Проверяем
+// через CanUsePip(both) == false.
+//
+// TDD plan #30.
+func TestCanUsePip_NoneOfPair_TurnPasses(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(b *Board)
+		color Color
+		pipA  uint8
+		pipB  uint8
+	}{
+		{
+			// Белая на 10; чёрные блокируют 4 и 5 — оба пипса в тупике.
+			name:  "белые: шашка на 10, блоки чёрного на 4 и 5 → пипсы 5 и 6 недоступны",
+			setup: func(b *Board) { b[9] = 1; b[3] = -1; b[4] = -1 },
+			color: White,
+			pipA:  6,
+			pipB:  5,
+		},
+		{
+			// Чёрная на 11; белые блокируют 5 и 6 — оба пипса в тупике.
+			name:  "чёрные: шашка на 11, блоки белого на 5 и 6 → пипсы 5 и 6 недоступны",
+			setup: func(b *Board) { b[10] = -1; b[4] = 1; b[5] = 1 },
+			color: Black,
+			pipA:  6,
+			pipB:  5,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var b Board
+			tc.setup(&b)
+			require.False(t, CanUsePip(b, tc.color, tc.pipA))
+			require.False(t, CanUsePip(b, tc.color, tc.pipB))
+		})
+	}
+}
