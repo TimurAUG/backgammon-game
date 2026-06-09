@@ -31,6 +31,10 @@ export interface WSClientConfig {
   token: string
 }
 
+// Транспортная фаза сокета. App мапит её в стор connection (#26b/#26c);
+// WSClient про стор не знает — отсюда собственный тип, а не ConnectionState.
+export type WSPhase = 'connecting' | 'connected' | 'reconnecting'
+
 const OPEN = 1
 const BACKOFF_BASE_MS = 1000
 const BACKOFF_CAP_MS = 30000
@@ -38,6 +42,7 @@ const BACKOFF_CAP_MS = 30000
 export class WSClient {
   private socket: WSConnection | null = null
   private listeners: Array<(msg: ServerMessage) => void> = []
+  private stateListeners: Array<(phase: WSPhase) => void> = []
   private stopped = false
   private attempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -50,6 +55,7 @@ export class WSClient {
   connect(): void {
     this.stopped = false
     this.attempts = 0
+    this.emitState('connecting')
     this.openSocket()
   }
 
@@ -67,6 +73,13 @@ export class WSClient {
     }
   }
 
+  onStateChange(cb: (phase: WSPhase) => void): () => void {
+    this.stateListeners.push(cb)
+    return () => {
+      this.stateListeners = this.stateListeners.filter((l) => l !== cb)
+    }
+  }
+
   close(): void {
     this.stopped = true
     if (this.reconnectTimer !== null) {
@@ -80,6 +93,7 @@ export class WSClient {
     const socket = new this.wsCtor(this.config.url)
     socket.onopen = () => {
       this.attempts = 0
+      this.emitState('connected')
       socket.send(
         serializeClientMessage({
           type: 'JOIN',
@@ -90,6 +104,7 @@ export class WSClient {
     }
     socket.onclose = () => {
       if (this.stopped) return
+      this.emitState('reconnecting')
       this.scheduleReconnect()
     }
     socket.onmessage = (ev) => this.handleMessage(ev.data)
@@ -103,6 +118,10 @@ export class WSClient {
       this.reconnectTimer = null
       this.openSocket()
     }, delay)
+  }
+
+  private emitState(phase: WSPhase): void {
+    for (const cb of this.stateListeners) cb(phase)
   }
 
   private handleMessage(data: unknown): void {
