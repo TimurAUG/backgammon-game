@@ -17,6 +17,7 @@ package domain
 //
 // TDD plan #13–#17.
 func HeadMoveAllowed(consumedThisTurn uint8, dice Dice, isFirstMove bool) bool {
-	// Заглушка для red-стадии: тест #13 должен упасть.
-	return false
+	// Минимум для #13: с головы за обычный ход — только одна.
+	// Исключение для дублей добавим в #14, #15.
+	return consumedThisTurn == 0
 }
