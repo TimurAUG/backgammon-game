@@ -22,17 +22,52 @@ const (
 // Закончена: у одного из игроков выкинуто 15 шашек.
 // Тип победы:
 //   - Oin — проигравший выкинул ≥1.
-//   - Mars/Koks определяются на следующем шаге TDD (#27-#28).
+//   - Mars — проигравший выкинул 0, нет его шашек в доме победителя и на его голове.
+//   - Koks — проигравший выкинул 0, есть его шашка в доме победителя или на его голове.
+//
+// Дом победителя: White → 1..6, Black → 13..18.
+// Голова победителя: White → пункт 24, Black → пункт 12.
 //
 // Для незаконченной игры возвращает нулевые значения (White, 0, false).
 //
-// TDD plan #25, #26.
+// TDD plan #25, #26, #27, #28.
 func Winner(b Board, borneOff [2]uint8) (Color, WinKind, bool) {
-	if borneOff[White] >= 15 {
-		return White, Oin, true
+	var winner, loser Color
+	switch {
+	case borneOff[White] >= 15:
+		winner, loser = White, Black
+	case borneOff[Black] >= 15:
+		winner, loser = Black, White
+	default:
+		return White, 0, false
 	}
-	if borneOff[Black] >= 15 {
-		return Black, Oin, true
+	if borneOff[loser] >= 1 {
+		return winner, Oin, true
 	}
-	return White, 0, false
+	if loserInWinnerHomeOrHead(b, winner) {
+		return winner, Koks, true
+	}
+	return winner, Mars, true
+}
+
+// loserInWinnerHomeOrHead — есть ли хотя бы одна шашка проигравшего в доме
+// победителя или на голове победителя.
+func loserInWinnerHomeOrHead(b Board, winner Color) bool {
+	switch winner {
+	case White:
+		for i := 0; i <= 5; i++ {
+			if b[i] < 0 {
+				return true
+			}
+		}
+		return b[23] < 0
+	case Black:
+		for i := 12; i <= 17; i++ {
+			if b[i] > 0 {
+				return true
+			}
+		}
+		return b[11] > 0
+	}
+	return false
 }
