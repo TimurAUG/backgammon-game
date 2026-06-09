@@ -90,6 +90,18 @@ describe('Game action wiring (#24a)', () => {
   })
 })
 
+describe('Game switch-game (#27)', () => {
+  test('Game_switchGameButton_callsOnNewGame', async () => {
+    const onNewGame = vi.fn()
+    applyServerMessage(stateFixture())
+    render(Game, { props: { onAction: vi.fn(), onNewGame } })
+
+    await fireEvent.click(screen.getByTestId('switch-game'))
+
+    expect(onNewGame).toHaveBeenCalledOnce()
+  })
+})
+
 describe('Game reconnect blocking (#26d)', () => {
   test('Game_reconnecting_disablesActionBar', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
