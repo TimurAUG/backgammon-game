@@ -2,10 +2,24 @@ package domain
 
 import "errors"
 
-// GameState — минимальный снимок партии для оркестрации хода.
+// GameStatus — фаза партии. Используется и доменом, и транспортом.
+type GameStatus uint8
+
+const (
+	// StatusWaitingForRoll — ход уже за определённым игроком, но кубики
+	// ещё не брошены. Также используется как начальный статус до
+	// ROLL_FOR_FIRST: оба игрока должны прислать сигнал.
+	StatusWaitingForRoll GameStatus = iota
+	// StatusWaitingForMove — кубики брошены, текущий игрок ходит.
+	StatusWaitingForMove
+	// StatusFinished — партия окончена.
+	StatusFinished
+)
+
+// GameState — снимок партии для оркестрации хода.
 //
-// Полная модель из SPEC.md содержит также IsFirstMove, Status, Winner, WinKind —
-// эти поля будут добавлены на этапе 11 (транспорт/сессии) по мере надобности.
+// Поля IsFirstMove, Winner, WinKind будут добавлены позже по мере надобности
+// транспорта.
 //
 // TDD plan #31, #32.
 type GameState struct {
@@ -13,6 +27,7 @@ type GameState struct {
 	Turn     Color
 	Dice     Dice
 	BorneOff [2]uint8
+	Status   GameStatus
 }
 
 // ErrIllegalMove возвращается из Apply, если ход нелегален: целевая клетка

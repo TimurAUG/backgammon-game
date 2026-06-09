@@ -5,7 +5,9 @@
 package game
 
 import (
+	crand "crypto/rand"
 	"errors"
+	"io"
 	"sync"
 
 	"github.com/TimurAUG/backgammon-game/internal/domain"
@@ -24,15 +26,17 @@ var ErrRoomFull = errors.New("room full")
 
 // Game — одна партия в памяти.
 //
-// Содержит идентификатор, доменное состояние и две позиции для соединений
-// игроков (индексируются по domain.Color). Поля conns защищены mu и могут
-// быть nil, пока соответствующий игрок не подключился (или отключился).
+// Содержит идентификатор, доменное состояние, источник случайности для
+// бросков и две позиции для соединений игроков (индексируются по
+// domain.Color). Поля conns и rolledForFirst защищены mu.
 type Game struct {
 	ID    string
 	State domain.GameState
 
-	mu    sync.Mutex
-	conns [2]Conn
+	mu             sync.Mutex
+	conns          [2]Conn
+	rng            io.Reader
+	rolledForFirst [2]bool
 }
 
 // Opponent возвращает соединение соперника для цвета c или nil, если соперник
@@ -53,16 +57,128 @@ func (g *Game) Detach(c domain.Color) {
 	g.conns[c] = nil
 }
 
+// RollForFirst обрабатывает сигнал «готов» от игрока c в фазе определения
+// первого хода.
+//
+// Семантика: команда не означает «бросок» сама по себе — это сигнал готовности.
+// Когда оба игрока сигналили, сервер бросает по одному кубику обоим
+// (White первым, Black вторым по rng), при равенстве — переброс до победителя.
+// После определения State.Turn = победитель, State.Dice = NewDice(winner,
+// loser), Status = WaitingForMove. STATE рассылается обоим клиентам.
+//
+// Если c уже сигналил ранее — игнорирует.
+//
+// TDD plan #34 (часть 2).
+func (g *Game) RollForFirst(c domain.Color) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.rolledForFirst[c] {
+		return nil
+	}
+	g.rolledForFirst[c] = true
+
+	if !(g.rolledForFirst[domain.White] && g.rolledForFirst[domain.Black]) {
+		return nil
+	}
+
+	for {
+		whiteVal, err := domain.RollOne(g.rng)
+		if err != nil {
+			return err
+		}
+		blackVal, err := domain.RollOne(g.rng)
+		if err != nil {
+			return err
+		}
+		if whiteVal == blackVal {
+			continue
+		}
+		winner, winnerVal, loserVal := domain.White, whiteVal, blackVal
+		if blackVal > whiteVal {
+			winner, winnerVal, loserVal = domain.Black, blackVal, whiteVal
+		}
+		g.State.Turn = winner
+		g.State.Dice = domain.NewDice(winnerVal, loserVal)
+		g.State.Status = domain.StatusWaitingForMove
+		break
+	}
+
+	g.broadcastStateLocked()
+	return nil
+}
+
+// broadcastStateLocked рассылает текущее состояние всем подключённым
+// соединениям. Вызывается с захваченным mu.
+func (g *Game) broadcastStateLocked() {
+	msg := StateMessage(g.State)
+	for _, conn := range g.conns {
+		if conn != nil {
+			_ = conn.Send(msg)
+		}
+	}
+}
+
+// StateMessage конвертирует доменное состояние в STATE-сообщение протокола.
+func StateMessage(s domain.GameState) protocol.ServerMessage {
+	board := make([]int8, len(s.Board))
+	for i, v := range s.Board {
+		board[i] = v
+	}
+	msg := protocol.ServerMessage{
+		Type:   "STATE",
+		Board:  board,
+		Turn:   colorString(s.Turn),
+		Status: statusString(s.Status),
+	}
+	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
+		msg.Dice = &protocol.DicePayload{
+			A:         s.Dice.A,
+			B:         s.Dice.B,
+			IsDouble:  s.Dice.IsDouble,
+			Remaining: s.Dice.Remaining,
+		}
+	}
+	return msg
+}
+
+func colorString(c domain.Color) string {
+	if c == domain.Black {
+		return "black"
+	}
+	return "white"
+}
+
+func statusString(s domain.GameStatus) string {
+	switch s {
+	case domain.StatusWaitingForMove:
+		return "waitingForMove"
+	case domain.StatusFinished:
+		return "finished"
+	default:
+		return "waitingForRoll"
+	}
+}
+
 // Manager хранит активные игры в памяти. Безопасен для одновременного
 // доступа из горутин WS-handler'а.
 type Manager struct {
 	mu    sync.Mutex
 	games map[string]*Game
+	rng   io.Reader
 }
 
-// NewManager создаёт пустой менеджер.
+// NewManager создаёт пустой менеджер с crypto/rand в качестве источника
+// случайности для бросков.
 func NewManager() *Manager {
-	return &Manager{games: map[string]*Game{}}
+	return &Manager{games: map[string]*Game{}, rng: crand.Reader}
+}
+
+// NewManagerWithRand — конструктор для тестов: фиксированный io.Reader
+// (bytes.Reader с заранее подготовленными байтами) делает броски
+// детерминированными.
+func NewManagerWithRand(rng io.Reader) *Manager {
+	return &Manager{games: map[string]*Game{}, rng: rng}
 }
 
 // JoinGame регистрирует соединение conn в игре с id и возвращает присвоенный
@@ -77,9 +193,11 @@ func (m *Manager) JoinGame(id string, conn Conn) (domain.Color, *Game, error) {
 		g = &Game{
 			ID: id,
 			State: domain.GameState{
-				Board: domain.InitialBoard(),
-				Turn:  domain.White,
+				Board:  domain.InitialBoard(),
+				Turn:   domain.White,
+				Status: domain.StatusWaitingForRoll,
 			},
+			rng: m.rng,
 		}
 		m.games[id] = g
 	}

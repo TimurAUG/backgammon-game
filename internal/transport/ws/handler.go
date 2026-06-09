@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/TimurAUG/backgammon-game/internal/domain"
 	"github.com/TimurAUG/backgammon-game/internal/game"
 	"github.com/TimurAUG/backgammon-game/internal/protocol"
 	"github.com/coder/websocket"
@@ -18,11 +17,12 @@ import (
 // Handler — http.Handler, апгрейдящий запрос до WS и обрабатывающий
 // сообщения клиента.
 //
-// На данный момент поддерживает:
+// Поддерживает:
 //   - JOIN: регистрация в менеджере, ответ STATE, нотификация соперника
 //     OPPONENT_JOINED, переход в read-loop.
+//   - ROLL_FOR_FIRST: сигнал готовности на определение первого хода.
 //
-// ROLL_FOR_FIRST / ROLL / MOVE / END_TURN / RESIGN — в следующих циклах #34+.
+// ROLL / MOVE / END_TURN / RESIGN — в следующих циклах #34+.
 type Handler struct {
 	mgr *game.Manager
 }
@@ -70,7 +70,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer g.Detach(color)
 
-	if err := pc.Send(stateMessage(g.State)); err != nil {
+	if err := pc.Send(game.StateMessage(g.State)); err != nil {
 		return
 	}
 	if opp := g.Opponent(color); opp != nil {
@@ -78,11 +78,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for {
-		_, _, err := conn.Read(ctx)
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}
-		// Будущие циклы #34+: парсинг ROLL/MOVE/END_TURN и т.п.
+		var in protocol.ClientMessage
+		if err := json.Unmarshal(data, &in); err != nil {
+			_ = pc.Send(protocol.ServerMessage{Type: "ERROR", Code: "INVALID_STATE", Message: "bad json"})
+			continue
+		}
+		switch in.Type {
+		case "ROLL_FOR_FIRST":
+			_ = g.RollForFirst(color)
+		default:
+			_ = pc.Send(protocol.ServerMessage{
+				Type: "ERROR", Code: "INVALID_STATE",
+				Message: "unsupported message: " + in.Type,
+			})
+		}
 	}
 }
 
@@ -104,24 +117,4 @@ func (p *playerConn) Send(msg protocol.ServerMessage) error {
 		return err
 	}
 	return p.conn.Write(p.ctx, websocket.MessageText, raw)
-}
-
-func stateMessage(s domain.GameState) protocol.ServerMessage {
-	board := make([]int8, len(s.Board))
-	for i, v := range s.Board {
-		board[i] = v
-	}
-	return protocol.ServerMessage{
-		Type:   "STATE",
-		Board:  board,
-		Turn:   colorString(s.Turn),
-		Status: "waitingForRoll",
-	}
-}
-
-func colorString(c domain.Color) string {
-	if c == domain.Black {
-		return "black"
-	}
-	return "white"
 }
