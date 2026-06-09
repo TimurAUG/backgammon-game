@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -52,5 +53,55 @@ func TestDice_Use_ConsumesAllPipsOfDouble(t *testing.T) {
 		d = d.Use(6)
 		require.Equalf(t, want, len(d.Remaining),
 			"после очередного Use(6) ожидалось %d пипсов, получено %d", want, len(d.Remaining))
+	}
+}
+
+// TestRollDice покрывает RollDice(r io.Reader): обычный бросок, дубль,
+// rejection sampling для устранения modulo-bias (байты ≥252 отбрасываются,
+// поскольку 256 не делится на 6 нацело).
+//
+// Подготовка к #34b (ROLL_FOR_FIRST/ROLL на уровне транспорта).
+func TestRollDice(t *testing.T) {
+	cases := []struct {
+		name          string
+		input         []byte
+		wantA, wantB  uint8
+		wantDouble    bool
+		wantRemaining []uint8
+	}{
+		{
+			name:          "байты 0,1 → бросок 1:2",
+			input:         []byte{0, 1},
+			wantA:         1,
+			wantB:         2,
+			wantDouble:    false,
+			wantRemaining: []uint8{1, 2},
+		},
+		{
+			name:          "байты 5,11 → дубль 6:6, 4 пипса",
+			input:         []byte{5, 11},
+			wantA:         6,
+			wantB:         6,
+			wantDouble:    true,
+			wantRemaining: []uint8{6, 6, 6, 6},
+		},
+		{
+			name:          "rejection: байты 252,253 отбрасываются, затем 0,1 → 1:2",
+			input:         []byte{252, 253, 0, 1},
+			wantA:         1,
+			wantB:         2,
+			wantDouble:    false,
+			wantRemaining: []uint8{1, 2},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := RollDice(bytes.NewReader(tc.input))
+			require.NoError(t, err)
+			require.Equal(t, tc.wantA, d.A)
+			require.Equal(t, tc.wantB, d.B)
+			require.Equal(t, tc.wantDouble, d.IsDouble)
+			require.Equal(t, tc.wantRemaining, d.Remaining)
+		})
 	}
 }
