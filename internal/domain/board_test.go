@@ -85,3 +85,45 @@ func TestNextPoint_WrapAndBearOff(t *testing.T) {
 		})
 	}
 }
+
+// setBoard возвращает копию стартовой доски с применёнными модификациями.
+// mods: пункт 1..24 → значение Board (положительное = белые, отрицательное
+// = чёрные, ноль = пусто). Используется в тестах для построения позиций.
+func setBoard(mods map[Point]int8) Board {
+	b := InitialBoard()
+	for p, v := range mods {
+		b[p-1] = v
+	}
+	return b
+}
+
+// TestIsLegalStep_LegalTargets проверяет легальные шаги:
+// на пустую клетку и на клетку со своими шашками.
+//
+// TDD plan #7, #8.
+func TestIsLegalStep_LegalTargets(t *testing.T) {
+	cases := []struct {
+		name  string
+		board Board
+		color Color
+		move  Move
+	}{
+		{
+			name:  "белый 24→18 пипсом 6, цель пуста",
+			board: InitialBoard(),
+			color: White,
+			move:  Move{From: 24, To: 18, Pip: 6},
+		}, // #7
+		{
+			name:  "белый 24→18 пипсом 6, на цели свои белые",
+			board: setBoard(map[Point]int8{18: 5}),
+			color: White,
+			move:  Move{From: 24, To: 18, Pip: 6},
+		}, // #8
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.True(t, IsLegalStep(tc.board, tc.color, tc.move))
+		})
+	}
+}
