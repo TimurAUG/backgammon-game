@@ -58,6 +58,22 @@ type Game struct {
 	rolledForFirst [2]bool
 }
 
+// Tokens возвращает копию токенов игроков. Для инспекции (тесты,
+// сериализация в Storage).
+func (g *Game) Tokens() [2]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.tokens
+}
+
+// RolledForFirst возвращает копию счётчиков «бросал ли для определения
+// первого хода». Для инспекции.
+func (g *Game) RolledForFirst() [2]bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.rolledForFirst
+}
+
 // Opponent возвращает соединение соперника для цвета c или nil, если соперник
 // не подключён.
 func (g *Game) Opponent(c domain.Color) Conn {
