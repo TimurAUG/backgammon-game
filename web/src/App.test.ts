@@ -3,9 +3,11 @@
 // createClient инжектируется: реальный WSClient поверх MockWebSocket.
 
 import { fireEvent, render, screen } from '@testing-library/svelte'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { flushSync } from 'svelte'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
+import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
 import { WSClient, type WSConnectionCtor } from './transport/ws'
 import { MockWebSocket } from '../tests/mockWebSocket'
@@ -16,6 +18,7 @@ import App from './App.svelte'
 beforeEach(() => {
   localStorage.clear()
   resetGameState()
+  resetConnectionState()
   MockWebSocket.reset()
 })
 
@@ -156,5 +159,26 @@ describe('App UNAUTHORIZED (#25)', () => {
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
     expect(ws.readyState).toBe(MockWebSocket.CLOSED)
+  })
+})
+
+describe('App connection state (#26e)', () => {
+  test('App_socketReconnecting_disablesActionBar', async () => {
+    vi.useFakeTimers()
+    try {
+      render(App, { props: { createClient: testCreateClient } })
+      await connectVia('g-1', 'tok')
+      const ws = MockWebSocket.last()
+      ws.acceptOpen()
+      ws.receive({ type: 'JOINED', color: 'white' })
+      ws.receive(stateFixture())
+
+      ws.serverClose(1006)
+      flushSync()
+
+      expect(screen.getByTestId('action-resign')).toBeDisabled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
