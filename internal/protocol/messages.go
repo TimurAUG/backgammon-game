@@ -17,11 +17,14 @@ type ClientMessage struct {
 }
 
 // DicePayload — представление Dice в JSON-протоколе.
+//
+// Remaining — []int, а НЕ []uint8: encoding/json кодирует []uint8 ([]byte)
+// в base64-строку, а контракт (nardy-protocol) требует массив чисел number[].
 type DicePayload struct {
-	A         uint8   `json:"a"`
-	B         uint8   `json:"b"`
-	IsDouble  bool    `json:"isDouble"`
-	Remaining []uint8 `json:"remaining"`
+	A         uint8 `json:"a"`
+	B         uint8 `json:"b"`
+	IsDouble  bool  `json:"isDouble"`
+	Remaining []int `json:"remaining"`
 }
 
 // MovePayload — одиночный ход в LEGAL_MOVES.

@@ -435,11 +435,15 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 		},
 	}
 	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
+		remaining := make([]int, len(s.Dice.Remaining))
+		for i, p := range s.Dice.Remaining {
+			remaining[i] = int(p)
+		}
 		msg.Dice = &protocol.DicePayload{
 			A:         s.Dice.A,
 			B:         s.Dice.B,
 			IsDouble:  s.Dice.IsDouble,
-			Remaining: s.Dice.Remaining,
+			Remaining: remaining,
 		}
 	}
 	return msg

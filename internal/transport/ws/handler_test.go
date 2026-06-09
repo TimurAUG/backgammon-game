@@ -242,7 +242,7 @@ func TestHandler_RollForFirst(t *testing.T) {
 		require.Equal(t, uint8(5), s.Dice.A)
 		require.Equal(t, uint8(3), s.Dice.B)
 		require.False(t, s.Dice.IsDouble)
-		require.Equal(t, []uint8{5, 3}, s.Dice.Remaining)
+		require.Equal(t, []int{5, 3}, s.Dice.Remaining)
 	}
 }
 
@@ -341,7 +341,7 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 		require.Len(t, s.Board, 24)
 		require.Equal(t, int8(14), s.Board[23], "после хода 24→19 на 24 остаётся 14")
 		require.Equal(t, int8(1), s.Board[18], "на 19 одна белая")
-		require.Equal(t, []uint8{3}, s.Dice.Remaining)
+		require.Equal(t, []int{3}, s.Dice.Remaining)
 	}
 
 	legal := readMessage(t, ctx, conn1)
@@ -465,7 +465,7 @@ func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
 		require.NotNil(t, s.Dice)
 		require.Equal(t, uint8(2), s.Dice.A)
 		require.Equal(t, uint8(4), s.Dice.B)
-		require.Equal(t, []uint8{2, 4}, s.Dice.Remaining)
+		require.Equal(t, []int{2, 4}, s.Dice.Remaining)
 	}
 
 	legal := readMessage(t, ctx, conn2)
