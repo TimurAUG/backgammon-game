@@ -44,6 +44,8 @@ type ServerMessage struct {
 	Status  string        `json:"status,omitempty"`
 	Dice    *DicePayload  `json:"dice,omitempty"`
 	Moves   []MovePayload `json:"moves,omitempty"`
+	Winner  string        `json:"winner,omitempty"`
+	Kind    string        `json:"kind,omitempty"`
 	Code    string        `json:"code,omitempty"`
 	Message string        `json:"message,omitempty"`
 }

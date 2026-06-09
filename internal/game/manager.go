@@ -102,9 +102,43 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 		return err
 	}
 	g.State = newState
+
+	if winner, kind, finished := domain.Winner(g.State.Board, g.State.BorneOff); finished {
+		g.State.Status = domain.StatusFinished
+		g.broadcastStateLocked()
+		g.broadcastGameOverLocked(winner, kind)
+		return nil
+	}
+
 	g.broadcastStateLocked()
 	g.sendLegalMovesLocked(g.State.Turn)
 	return nil
+}
+
+// broadcastGameOverLocked рассылает GAME_OVER обоим подключённым клиентам.
+// Вызывается с захваченным mu.
+func (g *Game) broadcastGameOverLocked(winner domain.Color, kind domain.WinKind) {
+	msg := protocol.ServerMessage{
+		Type:   "GAME_OVER",
+		Winner: colorString(winner),
+		Kind:   winKindString(kind),
+	}
+	for _, conn := range g.conns {
+		if conn != nil {
+			_ = conn.Send(msg)
+		}
+	}
+}
+
+func winKindString(k domain.WinKind) string {
+	switch k {
+	case domain.Mars:
+		return "mars"
+	case domain.Koks:
+		return "koks"
+	default:
+		return "oin"
+	}
 }
 
 // findPipFor подбирает значение пипса из Remaining такое, что ход (from→to)
