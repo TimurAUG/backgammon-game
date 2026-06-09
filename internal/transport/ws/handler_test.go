@@ -186,3 +186,65 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 		{From: 24, To: 21, Pip: 3},
 	}, legalMoves.Moves)
 }
+
+// TestHandler_Move_AppliesAndBroadcasts — после ROLL_FOR_FIRST (rng[4,2] →
+// white wins, dice 5:3) белый шлёт MOVE {from:24, to:19}. Сервер вычисляет
+// pip=5, применяет Apply, рассылает STATE обоим, и LEGAL_MOVES только белому.
+//
+// Ожидание: после MOVE Board имеет 14 на пункте 24 и 1 на пункте 19;
+// Remaining=[3]; HeadConsumed[White]=1.
+//
+// LEGAL_MOVES пуст: с пункта 24 правило головы запрещает (HeadConsumed=1,
+// исключение работает только для дублей 6:6/4:4/3:3, а у нас 5:3); с пункта 19
+// шаг 19→16 пипсом 3, на 16 пусто — легально.
+//
+// Проверим, что в LEGAL_MOVES есть 19→16 пипсом 3 и НЕТ 24→21 пипсом 3.
+//
+// TDD plan #34 (часть 4 — MOVE).
+func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1)
+
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1)
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+
+	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
+
+	state1 := readMessage(t, ctx, conn1)
+	state2 := readMessage(t, ctx, conn2)
+	for _, s := range []protocol.ServerMessage{state1, state2} {
+		require.Equal(t, "STATE", s.Type)
+		require.Len(t, s.Board, 24)
+		require.Equal(t, int8(14), s.Board[23], "после хода 24→19 на 24 остаётся 14")
+		require.Equal(t, int8(1), s.Board[18], "на 19 одна белая")
+		require.Equal(t, []uint8{3}, s.Dice.Remaining)
+	}
+
+	legal := readMessage(t, ctx, conn1)
+	require.Equal(t, "LEGAL_MOVES", legal.Type)
+	require.ElementsMatch(t, []protocol.MovePayload{
+		{From: 19, To: 16, Pip: 3},
+	}, legal.Moves)
+}
