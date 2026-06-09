@@ -50,7 +50,7 @@ UI event → gameStore action → WSClient.send → WebSocket
 
 ### Цикл на каждый пункт плана
 
-1. **Red.** Найти следующий пункт в `FRONTEND_SPEC.md` § 7. Написать тест в `*.test.ts` (для логики) или `*.test.svelte.ts` (для компонента) рядом с целевым файлом. `npm test` должен упасть с осмысленным сообщением. Коммит: `test: #<N> <описание>`.
+1. **Red.** Найти следующий пункт в `FRONTEND_SPEC.md` § 7. Написать тест в `*.test.ts` рядом с целевым файлом. `npm test` должен упасть с осмысленным сообщением. Коммит: `test: #<N> <описание>`.
 
 2. **Green.** Минимальный код, чтобы тест прошёл. Никакой логики сверх покрытой тестом. Коммит: `feat: #<N> <описание>`.
 
@@ -67,8 +67,9 @@ UI event → gameStore action → WSClient.send → WebSocket
 ## Конвенции тестов
 
 - **Тестовый рантайм**: Vitest + jsdom.
-- **Компонентные тесты**: `@testing-library/svelte`. Файлы: `Component.test.svelte.ts` рядом с `Component.svelte`.
+- **Компонентные тесты**: `@testing-library/svelte`. Файлы: `Component.test.ts` рядом с `Component.svelte`.
 - **Юнит-тесты** (stores, transport, lib, protocol): `*.test.ts` рядом с источником.
+- Суффикс `.svelte.ts` зарезервирован за исходниками с runes (например, `stores/game.svelte.ts`). Тесты — всегда без него.
 - **Mock WebSocket**: один шаблон в `web/tests/mockWebSocket.ts`, не плодить локально по тестам.
 - **Фикстуры STATE**: фабрики типа `stateFixture({ turn: 'white', ... })` в `web/tests/fixtures.ts` — не «магические» JSON-объекты по тестам.
 - **Имена**: `<юнит>_<сценарий>_<ожидание>` (например, `gameStore_onSTATE_updatesBoard`).

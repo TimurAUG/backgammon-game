@@ -89,7 +89,7 @@ socket.onmessage = (ev) => {
 ## Тестирование компонентов
 
 - Библиотека: **`@testing-library/svelte`**, рантайм Vitest + jsdom.
-- Файл рядом: `Board.test.svelte.ts` рядом с `Board.svelte`.
+- Файл рядом: `Board.test.ts` рядом с `Board.svelte`. Суффикс `.svelte.ts` — только для runes-исходников (например `stores/game.svelte.ts`), не для тестов.
 - Импорт компонента и `render`:
 
 ```ts
