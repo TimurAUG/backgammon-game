@@ -3,6 +3,7 @@
   import Game from './screens/Game.svelte'
   import { clearCredentials, loadCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
+  import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
   import { applyServerMessage, resetGameState } from './stores/game.svelte'
   import { WSClient } from './transport/ws'
 
@@ -26,6 +27,7 @@
   function startSession(creds: Credentials): void {
     const c = createClient(creds)
     c.onMessage(handleMessage)
+    c.onStateChange(setConnectionState)
     c.connect()
     client = c
   }
@@ -51,6 +53,7 @@
     client = null
     clearCredentials()
     resetGameState()
+    resetConnectionState()
   }
 
   function handleNewGame(): void {
