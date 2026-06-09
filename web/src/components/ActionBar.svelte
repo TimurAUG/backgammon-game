@@ -6,16 +6,24 @@
     turn: Color
     myColor: Color
     rolledForFirst: boolean
+    disabled?: boolean
     onAction: (msg: ClientMessage) => void
   }
 
-  let { status, turn, myColor, rolledForFirst, onAction }: Props = $props()
+  let { status, turn, myColor, rolledForFirst, disabled = false, onAction }: Props = $props()
 
   const myTurn = $derived(turn === myColor)
   const showRollForFirst = $derived(!rolledForFirst && status !== 'finished')
   const showRoll = $derived(rolledForFirst && status === 'waitingForRoll' && myTurn)
   const showEndTurn = $derived(status === 'waitingForMove' && myTurn)
   const showResign = $derived(status !== 'finished')
+
+  // При disabled (реконнект) кнопки инертны даже если клик дошёл до
+  // делегированного обработчика — send по закрытому сокету бы бросил.
+  function act(msg: ClientMessage): void {
+    if (disabled) return
+    onAction(msg)
+  }
 </script>
 
 <div class="action-bar">
@@ -23,7 +31,8 @@
     <button
       data-testid="action-roll-for-first"
       type="button"
-      onclick={() => onAction({ type: 'ROLL_FOR_FIRST' })}
+      {disabled}
+      onclick={() => act({ type: 'ROLL_FOR_FIRST' })}
     >
       Бросить за первый ход
     </button>
@@ -32,7 +41,8 @@
     <button
       data-testid="action-roll"
       type="button"
-      onclick={() => onAction({ type: 'ROLL' })}
+      {disabled}
+      onclick={() => act({ type: 'ROLL' })}
     >
       Бросить кубики
     </button>
@@ -41,7 +51,8 @@
     <button
       data-testid="action-end-turn"
       type="button"
-      onclick={() => onAction({ type: 'END_TURN' })}
+      {disabled}
+      onclick={() => act({ type: 'END_TURN' })}
     >
       Завершить ход
     </button>
@@ -51,7 +62,8 @@
       data-testid="action-resign"
       type="button"
       class="danger"
-      onclick={() => onAction({ type: 'RESIGN' })}
+      {disabled}
+      onclick={() => act({ type: 'RESIGN' })}
     >
       Сдаться
     </button>
