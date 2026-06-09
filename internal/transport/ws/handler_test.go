@@ -248,3 +248,101 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 		{From: 19, To: 16, Pip: 3},
 	}, legal.Moves)
 }
+
+// TestHandler_EndTurn_RejectsWithPipsLeft — END_TURN при незавершённом ходе
+// (есть пипс 3 и легальный ход 19→16) отклоняется с ERROR{MUST_USE_PIP}.
+// State не меняется.
+//
+// TDD plan #34 (часть 5a).
+func TestHandler_EndTurn_RejectsWithPipsLeft(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+
+	et, err := json.Marshal(protocol.ClientMessage{Type: "END_TURN"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, et))
+
+	msg := readMessage(t, ctx, conn1)
+	require.Equal(t, "ERROR", msg.Type)
+	require.Equal(t, "MUST_USE_PIP", msg.Code)
+}
+
+// TestHandler_EndTurn_PassesTurn — после исчерпания всех легальных ходов
+// (MOVE 24→19, MOVE 19→16) END_TURN передаёт ход чёрному. STATE обоим:
+// turn=black, status=waitingForRoll, Dice пустой, IsFirstMove[White] = false
+// (нет отдельного поля в STATE, но HeadConsumed обнулён).
+//
+// TDD plan #34 (часть 5b).
+func TestHandler_EndTurn_PassesTurn(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+
+	// Второй ход белого: 19→16 пипсом 3 (используем последний пипс).
+	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 19, To: 16})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES (пустой)
+
+	et, err := json.Marshal(protocol.ClientMessage{Type: "END_TURN"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, et))
+
+	state1 := readMessage(t, ctx, conn1)
+	state2 := readMessage(t, ctx, conn2)
+	for _, s := range []protocol.ServerMessage{state1, state2} {
+		require.Equal(t, "STATE", s.Type)
+		require.Equal(t, "black", s.Turn)
+		require.Equal(t, "waitingForRoll", s.Status)
+		require.Nil(t, s.Dice, "Dice должен быть сброшен после END_TURN")
+	}
+}
+
+// playUntilFirstMove подключает двух клиентов, проходит JOIN/ROLL_FOR_FIRST
+// и выполняет первый ход 24→19 пипсом 5. Возвращает соединения готовые к
+// следующему сообщению белого. Соответствует rng[4,2].
+func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*websocket.Conn, *websocket.Conn) {
+	t.Helper()
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	_ = readMessage(t, ctx, conn1)
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+
+	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, mv))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+	return conn1, conn2
+}
