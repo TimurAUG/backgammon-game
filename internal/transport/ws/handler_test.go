@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -31,17 +32,8 @@ func TestHandler_JoinReturnsState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(t, err)
+	conn := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
 	defer conn.Close(websocket.StatusInternalError, "test cleanup")
-
-	join, err := json.Marshal(protocol.ClientMessage{
-		Type:   "JOIN",
-		GameID: "g1",
-		Token:  "t1",
-	})
-	require.NoError(t, err)
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, join))
 
 	msg := readMessage(t, ctx, conn)
 	require.Equal(t, "STATE", msg.Type)
@@ -50,6 +42,25 @@ func TestHandler_JoinReturnsState(t *testing.T) {
 	require.Len(t, msg.Board, 24)
 	require.Equal(t, int8(15), msg.Board[23], "15 белых на пункте 24")
 	require.Equal(t, int8(-15), msg.Board[11], "15 чёрных на пункте 12")
+}
+
+// TestHandler_UnauthorizedWithoutHeader — без Authorization-заголовка
+// сервер должен отказать в WS-handshake до upgrade.
+//
+// TDD plan #37.
+func TestHandler_UnauthorizedWithoutHeader(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, resp, err := websocket.Dial(ctx, wsURL, nil)
+	require.Error(t, err, "WS-handshake без токена должен провалиться")
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 // TestHandler_SecondJoinNotifiesFirst — интеграционный тест на два клиента
@@ -80,14 +91,11 @@ func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 	require.Equal(t, "OPPONENT_JOINED", opp.Type)
 }
 
+// dialAndJoin подключается с уникальным токеном в Authorization-header.
+// Используется в тестах, где нужны два разных игрока.
 func dialAndJoin(t *testing.T, ctx context.Context, wsURL, gameID string) *websocket.Conn {
 	t.Helper()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(t, err)
-	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: gameID})
-	require.NoError(t, err)
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
-	return conn
+	return dialAndJoinWithToken(t, ctx, wsURL, gameID, "tok-"+t.Name()+"-"+gameID)
 }
 
 func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) protocol.ServerMessage {
@@ -416,11 +424,19 @@ func TestHandler_Reconnect(t *testing.T) {
 		"новый white-conn (после реконнекта) должен получить OPPONENT_JOINED при входе black")
 }
 
+// dialAndJoinWithToken подключается с явно заданным токеном в
+// Authorization: Bearer-заголовке. JOIN-сообщение токен больше не несёт
+// (по SPEC #37).
 func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, token string) *websocket.Conn {
 	t.Helper()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	opts := &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Authorization": []string{"Bearer " + token},
+		},
+	}
+	conn, _, err := websocket.Dial(ctx, wsURL, opts)
 	require.NoError(t, err)
-	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: gameID, Token: token})
+	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: gameID})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
 	return conn
