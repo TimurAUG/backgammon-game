@@ -374,6 +374,58 @@ func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
 	}, legal.Moves)
 }
 
+// TestHandler_Reconnect — клиент с тем же gameId и token подключается
+// повторно (например, после обрыва соединения). Сервер должен вернуть его
+// в тот же слот и прислать STATE.
+//
+// Сценарий:
+//  1. conn1 JOIN(g1, t1) → STATE как white.
+//  2. conn2 JOIN(g1, t1) → STATE как white (реконнект на тот же слот).
+//  3. conn3 JOIN(g1, t2) → STATE как black; conn2 (новый white) получает
+//     OPPONENT_JOINED.
+//
+// TDD plan #35.
+func TestHandler_Reconnect(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	state1 := readMessage(t, ctx, conn1)
+	require.Equal(t, "STATE", state1.Type)
+	require.Equal(t, int8(15), state1.Board[23], "initial: 15 белых на 24")
+
+	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	state2 := readMessage(t, ctx, conn2)
+	require.Equal(t, "STATE", state2.Type)
+	require.Equal(t, int8(15), state2.Board[23], "реконнект: тот же initial board")
+
+	conn3 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t2")
+	defer conn3.Close(websocket.StatusInternalError, "test cleanup")
+	state3 := readMessage(t, ctx, conn3)
+	require.Equal(t, "STATE", state3.Type)
+
+	opp := readMessage(t, ctx, conn2)
+	require.Equal(t, "OPPONENT_JOINED", opp.Type,
+		"новый white-conn (после реконнекта) должен получить OPPONENT_JOINED при входе black")
+}
+
+func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, token string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(t, err)
+	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: gameID, Token: token})
+	require.NoError(t, err)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+	return conn
+}
+
 // playUntilFirstMove подключает двух клиентов, проходит JOIN/ROLL_FOR_FIRST
 // и выполняет первый ход 24→19 пипсом 5. Возвращает соединения готовые к
 // следующему сообщению белого. Соответствует rng[4,2].
