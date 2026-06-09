@@ -139,6 +139,38 @@ func TestLegalMoves(t *testing.T) {
 				{From: 3, To: 0, Pip: 4},
 			},
 		},
+		{
+			name: "правило головы: initial board, белые [5,3], HeadConsumed=1 → 0 ходов (только голова)",
+			setup: func() GameState {
+				return GameState{
+					Board:        InitialBoard(),
+					Turn:         White,
+					Dice:         NewDice(5, 3),
+					HeadConsumed: [2]uint8{1, 0},
+					IsFirstMove:  [2]bool{true, true},
+				}
+			},
+			want: []Move{},
+		},
+		{
+			name: "исключение головы 6:6 на первом ходу: 14 белых на 24 + 1 на 18, HeadConsumed=1, [6,6,6,6] → 24→18 и 18→12",
+			setup: func() GameState {
+				var b Board
+				b[23] = 14
+				b[17] = 1
+				return GameState{
+					Board:        b,
+					Turn:         White,
+					Dice:         NewDice(6, 6),
+					HeadConsumed: [2]uint8{1, 0},
+					IsFirstMove:  [2]bool{true, true},
+				}
+			},
+			want: []Move{
+				{From: 24, To: 18, Pip: 6},
+				{From: 18, To: 12, Pip: 6},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

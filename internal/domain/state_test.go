@@ -68,6 +68,57 @@ func TestApply_UpdatesStateOnLegalMove(t *testing.T) {
 	}
 }
 
+// TestApply_IncrementsHeadConsumed — при ходе с головы HeadConsumed[Turn]
+// увеличивается на 1. Голова белых — пункт 24, голова чёрных — пункт 12.
+//
+// TDD plan: подготовка к #34d (учёт правила головы в LEGAL_MOVES).
+func TestApply_IncrementsHeadConsumed(t *testing.T) {
+	t.Run("белый ходит с 24 → HeadConsumed[White]=1", func(t *testing.T) {
+		var b Board
+		b[23] = 15
+		b[11] = -15
+		s := GameState{
+			Board:       b,
+			Turn:        White,
+			Dice:        NewDice(5, 3),
+			IsFirstMove: [2]bool{true, true},
+		}
+		ns, err := Apply(s, Move{From: 24, To: 19, Pip: 5})
+		require.NoError(t, err)
+		require.Equal(t, uint8(1), ns.HeadConsumed[White])
+		require.Equal(t, uint8(0), ns.HeadConsumed[Black])
+	})
+	t.Run("чёрный ходит с 12 → HeadConsumed[Black]=1", func(t *testing.T) {
+		var b Board
+		b[11] = -15
+		b[23] = 15
+		s := GameState{
+			Board:       b,
+			Turn:        Black,
+			Dice:        NewDice(5, 3),
+			IsFirstMove: [2]bool{true, true},
+		}
+		ns, err := Apply(s, Move{From: 12, To: 7, Pip: 5})
+		require.NoError(t, err)
+		require.Equal(t, uint8(0), ns.HeadConsumed[White])
+		require.Equal(t, uint8(1), ns.HeadConsumed[Black])
+	})
+	t.Run("ход не с головы → HeadConsumed не меняется", func(t *testing.T) {
+		var b Board
+		b[9] = 1 // белая на 10 — не голова
+		b[11] = -15
+		s := GameState{
+			Board:        b,
+			Turn:         White,
+			Dice:         NewDice(5, 3),
+			HeadConsumed: [2]uint8{0, 0},
+		}
+		ns, err := Apply(s, Move{From: 10, To: 5, Pip: 5})
+		require.NoError(t, err)
+		require.Equal(t, uint8(0), ns.HeadConsumed[White])
+	})
+}
+
 // TestApply_ReturnsErrorOnIllegalMove проверяет, что Apply возвращает ошибку
 // при нелегальном ходе (целевой пункт занят соперником) и при попытке
 // использовать пипс, которого нет в Remaining.
