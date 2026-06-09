@@ -41,12 +41,12 @@ func AllInHome(b Board, c Color) bool {
 // Условия легального выкида:
 //   - все 15 шашек игрока c находятся в его доме (AllInHome);
 //   - на пункте from стоит шашка игрока c;
-//   - пипс точный: from совпадает с bearOffPointForPip(c, pip).
+//   - либо пипс точный (from == bearOffPointForPip(c, pip)),
+//   - либо пипс переборный: from «ближе к выкиду» чем точный пункт пипса,
+//     и между ними нет занятых пунктов цвета c (т.е. from — самый дальний
+//     от выкида занятый пункт с меньшим пипсом).
 //
-// Переборный пипс пока не поддерживается — он будет добавлен следующим
-// циклом TDD (#23).
-//
-// TDD plan #21, #22.
+// TDD plan #21, #22, #23.
 func IsLegalBearOff(b Board, c Color, from Point, pip uint8) bool {
 	if !AllInHome(b, c) {
 		return false
@@ -54,20 +54,50 @@ func IsLegalBearOff(b Board, c Color, from Point, pip uint8) bool {
 	if from < 1 || from > 24 {
 		return false
 	}
-	cell := b[from-1]
 	switch c {
 	case White:
-		if cell <= 0 {
+		if b[from-1] <= 0 {
 			return false
 		}
 	case Black:
-		if cell >= 0 {
+		if b[from-1] >= 0 {
 			return false
 		}
 	default:
 		return false
 	}
-	return bearOffPointForPip(c, pip) == from
+	exact := bearOffPointForPip(c, pip)
+	if from == exact {
+		return true
+	}
+	// Переборный: на пунктах от from (исключительно) до exact (включительно)
+	// по направлению цвета не должно быть шашек этого цвета. Если такая шашка
+	// есть — она «дальше» from по пути, и пипс должен использоваться её.
+	switch c {
+	case White:
+		// from < exact, путь дальше от выкида = больший номер.
+		if from >= exact {
+			return false
+		}
+		for p := from + 1; p <= exact; p++ {
+			if b[p-1] > 0 {
+				return false
+			}
+		}
+		return true
+	case Black:
+		// from > exact, путь дальше от выкида = меньший номер.
+		if from <= exact {
+			return false
+		}
+		for p := exact; p < from; p++ {
+			if b[p-1] < 0 {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // bearOffPointForPip возвращает пункт, с которого данный пипс выкидывает
