@@ -111,7 +111,7 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 	}
 
 	g.broadcastStateLocked()
-	g.sendLegalMovesLocked(g.State.Turn)
+	g.sendLegalMovesOrAutoEndTurnLocked(g.State.Turn)
 	return nil
 }
 
@@ -198,7 +198,7 @@ func (g *Game) Roll(c domain.Color) error {
 	g.State.Dice = dice
 	g.State.Status = domain.StatusWaitingForMove
 	g.broadcastStateLocked()
-	g.sendLegalMovesLocked(c)
+	g.sendLegalMovesOrAutoEndTurnLocked(c)
 	return nil
 }
 
@@ -298,7 +298,7 @@ func (g *Game) RollForFirst(c domain.Color) error {
 	}
 
 	g.broadcastStateLocked()
-	g.sendLegalMovesLocked(g.State.Turn)
+	g.sendLegalMovesOrAutoEndTurnLocked(g.State.Turn)
 	return nil
 }
 
@@ -313,18 +313,61 @@ func (g *Game) broadcastStateLocked() {
 	}
 }
 
-// sendLegalMovesLocked отправляет LEGAL_MOVES игроку цвета c — только тому,
-// чей сейчас ход. Вызывается с захваченным mu.
-func (g *Game) sendLegalMovesLocked(c domain.Color) {
-	if g.conns[c] == nil {
+// sendLegalMovesOrAutoEndTurnLocked отправляет LEGAL_MOVES игроку цвета c
+// если есть хотя бы один легальный ход. Если ходов нет — автоматически
+// передаёт ход сопернику через autoEndTurnLocked. Вызывается с захваченным mu.
+//
+// SPEC: «Если массив пуст — у игрока нет легальных продолжений, сервер
+// автоматически передаст ход (через внутренний END_TURN)».
+func (g *Game) sendLegalMovesOrAutoEndTurnLocked(c domain.Color) {
+	moves := domain.LegalMoves(g.State)
+	if len(moves) > 0 {
+		if g.conns[c] == nil {
+			return
+		}
+		payload := make([]protocol.MovePayload, len(moves))
+		for i, m := range moves {
+			payload[i] = protocol.MovePayload{From: uint8(m.From), To: uint8(m.To), Pip: m.Pip}
+		}
+		_ = g.conns[c].Send(protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload})
 		return
 	}
-	moves := domain.LegalMoves(g.State)
-	payload := make([]protocol.MovePayload, len(moves))
-	for i, m := range moves {
-		payload[i] = protocol.MovePayload{From: uint8(m.From), To: uint8(m.To), Pip: m.Pip}
+	g.autoEndTurnLocked(c)
+}
+
+// autoEndTurnLocked передаёт ход сопернику без проверки IsTurnComplete
+// (она избыточна — мы попали сюда потому что ходов нет). Проверка
+// SixBlockAllowed остаётся: при нарушении шлём ERROR обоим клиентам,
+// ход не передаём — игра застряет.
+func (g *Game) autoEndTurnLocked(c domain.Color) {
+	if !domain.SixBlockAllowed(g.State.Board, c) {
+		msg := protocol.ServerMessage{
+			Type: "ERROR", Code: "RULE_OF_SIX",
+			Message: "final position violates six rule",
+		}
+		for _, conn := range g.conns {
+			if conn != nil {
+				_ = conn.Send(msg)
+			}
+		}
+		return
 	}
-	_ = g.conns[c].Send(protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload})
+	next := domain.Black
+	if c == domain.Black {
+		next = domain.White
+	}
+	isFirstMove := g.State.IsFirstMove
+	isFirstMove[c] = false
+	g.State = domain.GameState{
+		Board:        g.State.Board,
+		Turn:         next,
+		Dice:         domain.Dice{},
+		BorneOff:     g.State.BorneOff,
+		Status:       domain.StatusWaitingForRoll,
+		HeadConsumed: [2]uint8{},
+		IsFirstMove:  isFirstMove,
+	}
+	g.broadcastStateLocked()
 }
 
 // StateMessage конвертирует доменное состояние в STATE-сообщение протокола.
