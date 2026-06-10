@@ -1,0 +1,24 @@
+# Fly.io. Перед первым деплоем: flyctl auth login; flyctl apps create <имя>
+# (или flyctl launch — сгенерит этот файл сам). Замени app на своё имя.
+app = "nardy"
+
+primary_region = "fra"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # WS-соединения держат машину «занятой», чтобы её не усыпили посреди партии.
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 200
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

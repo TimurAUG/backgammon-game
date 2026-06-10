@@ -1,0 +1,13 @@
+# Зависимости и сборки — ставятся/генерятся внутри образа.
+web/node_modules
+web/dist
+
+# Локальный бинарь, логи, VCS, тулинг.
+/server
+*.log
+.git
+.gitignore
+.claude
+.idea
+.vscode
+.DS_Store
