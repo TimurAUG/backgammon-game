@@ -2,6 +2,8 @@
   import type { Color, Move } from '../protocol/messages'
 
   import {
+    BAR_WIDTH,
+    BAR_X,
     COLUMN_WIDTH,
     VIEWBOX_HEIGHT,
     VIEWBOX_WIDTH,
@@ -88,6 +90,7 @@
   viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
   xmlns="http://www.w3.org/2000/svg"
 >
+  <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
   {#each POINTS as point (point)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -132,6 +135,9 @@
     max-width: 800px;
     border: 2px solid #5a3a1e;
     background: #e7c79b;
+  }
+  .bar {
+    fill: #5a3a1e;
   }
   .point.even {
     fill: #c19a6b;

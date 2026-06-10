@@ -4,10 +4,15 @@
 //   13 14 15 16 17 18 19 20 21 22 23 24   ← верхний ряд, шашки растут вниз
 //   12 11 10  9  8  7  6  5  4  3  2  1   ← нижний ряд, шашки растут вверх
 
-export const VIEWBOX_WIDTH = 800
-export const VIEWBOX_HEIGHT = 760
 export const COLUMNS = 12
-export const COLUMN_WIDTH = VIEWBOX_WIDTH / COLUMNS
+export const COLUMN_WIDTH = 60
+// Центральный бар — визуальный разделитель двух половин (по 6 пунктов).
+// Битья нет, но бар нужен как ориентир (#3).
+export const BAR_WIDTH = 40
+export const VIEWBOX_WIDTH = COLUMNS * COLUMN_WIDTH + BAR_WIDTH
+export const VIEWBOX_HEIGHT = 760
+// Левый край бара — сразу после 6 левых колонок.
+export const BAR_X = (COLUMNS / 2) * COLUMN_WIDTH
 
 export const CHECKER_RADIUS = 25
 export const CHECKER_DIAMETER = CHECKER_RADIUS * 2
@@ -23,26 +28,22 @@ export interface PointAnchor {
   direction: 'up' | 'down'
 }
 
+// columnX — x центра колонки col (0..11) с учётом зазора-бара после 6-й.
+function columnX(col: number): number {
+  const barGap = col >= COLUMNS / 2 ? BAR_WIDTH : 0
+  return col * COLUMN_WIDTH + barGap + COLUMN_WIDTH / 2
+}
+
 export function pointAnchor(point: number): PointAnchor {
   if (point < 1 || point > 24 || !Number.isInteger(point)) {
     throw new Error(`pointAnchor: point ${point} out of range [1..24]`)
   }
   if (point <= 12) {
-    // нижний ряд: 1 справа, 12 слева
-    const col = COLUMNS - point
-    return {
-      x: (col + 0.5) * COLUMN_WIDTH,
-      y: VIEWBOX_HEIGHT,
-      direction: 'up',
-    }
+    // нижний ряд: 1 справа (col 11), 12 слева (col 0)
+    return { x: columnX(COLUMNS - point), y: VIEWBOX_HEIGHT, direction: 'up' }
   }
-  // верхний ряд: 13 слева, 24 справа
-  const col = point - 13
-  return {
-    x: (col + 0.5) * COLUMN_WIDTH,
-    y: 0,
-    direction: 'down',
-  }
+  // верхний ряд: 13 слева (col 0), 24 справа (col 11)
+  return { x: columnX(point - 13), y: 0, direction: 'down' }
 }
 
 export interface CheckerPosition {

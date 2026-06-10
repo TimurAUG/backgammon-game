@@ -11,8 +11,10 @@
 import { describe, expect, test } from 'vitest'
 
 import {
+  BAR_WIDTH,
   CHECKER_DIAMETER,
   CHECKER_RADIUS,
+  COLUMNS,
   COLUMN_WIDTH,
   VIEWBOX_HEIGHT,
   VIEWBOX_WIDTH,
@@ -20,18 +22,22 @@ import {
   pointAnchor,
 } from './geometry'
 
+// x центра колонки col (0..11) с учётом бара после 6-й — зеркало geometry.
+const colX = (col: number): number =>
+  col * COLUMN_WIDTH + (col >= 6 ? BAR_WIDTH : 0) + COLUMN_WIDTH / 2
+
 describe('pointAnchor (#11)', () => {
   test.each<[number, number, number, 'up' | 'down']>([
-    // нижний ряд: 1 справа → 12 слева, шашки растут вверх
-    [1, 11.5 * COLUMN_WIDTH, VIEWBOX_HEIGHT, 'up'],
-    [6, 6.5 * COLUMN_WIDTH, VIEWBOX_HEIGHT, 'up'],
-    [7, 5.5 * COLUMN_WIDTH, VIEWBOX_HEIGHT, 'up'],
-    [12, 0.5 * COLUMN_WIDTH, VIEWBOX_HEIGHT, 'up'],
-    // верхний ряд: 13 слева → 24 справа, шашки растут вниз
-    [13, 0.5 * COLUMN_WIDTH, 0, 'down'],
-    [18, 5.5 * COLUMN_WIDTH, 0, 'down'],
-    [19, 6.5 * COLUMN_WIDTH, 0, 'down'],
-    [24, 11.5 * COLUMN_WIDTH, 0, 'down'],
+    // нижний ряд: 1 справа (col 11) → 12 слева (col 0), шашки растут вверх
+    [1, colX(11), VIEWBOX_HEIGHT, 'up'],
+    [6, colX(6), VIEWBOX_HEIGHT, 'up'],
+    [7, colX(5), VIEWBOX_HEIGHT, 'up'],
+    [12, colX(0), VIEWBOX_HEIGHT, 'up'],
+    // верхний ряд: 13 слева (col 0) → 24 справа (col 11), шашки растут вниз
+    [13, colX(0), 0, 'down'],
+    [18, colX(5), 0, 'down'],
+    [19, colX(6), 0, 'down'],
+    [24, colX(11), 0, 'down'],
   ])('pointAnchor_point%i_atCorrectXYAndDirection', (point, x, y, dir) => {
     const a = pointAnchor(point)
     expect(a.x).toBeCloseTo(x, 5)
@@ -106,11 +112,11 @@ describe('checkerAt overlap when stack is tall (#5)', () => {
 
 describe('viewBox constants', () => {
   test('viewBox_dimensions', () => {
-    expect(VIEWBOX_WIDTH).toBe(800)
+    expect(VIEWBOX_WIDTH).toBe(760)
     expect(VIEWBOX_HEIGHT).toBe(760)
   })
 
-  test('columnWidth_isViewBoxWidthDivided12', () => {
-    expect(COLUMN_WIDTH).toBeCloseTo(VIEWBOX_WIDTH / 12, 5)
+  test('viewBoxWidth_isColumnsPlusBar', () => {
+    expect(VIEWBOX_WIDTH).toBe(COLUMNS * COLUMN_WIDTH + BAR_WIDTH)
   })
 })
