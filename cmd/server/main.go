@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,8 +36,16 @@ func main() {
 	}
 	defer cleanup()
 
+	wsHandler := ws.NewHandler(mgr)
+	// ALLOWED_ORIGINS (через запятую) ослабляет строгую same-origin проверку WS —
+	// для self-host за туннелем/реверс-прокси (Host ≠ Origin). Напр. "*".
+	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {
+		wsHandler.OriginPatterns = strings.Split(origins, ",")
+		log.Printf("WS allowed origins: %v", wsHandler.OriginPatterns)
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("/ws", ws.NewHandler(mgr))
+	mux.Handle("/ws", wsHandler)
 	rest.NewHandler(mgr).Register(mux)
 
 	// В проде (Docker/Fly) отдаём собранный SPA из STATIC_DIR с того же origin,

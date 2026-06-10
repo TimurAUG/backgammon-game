@@ -26,6 +26,11 @@ import (
 // ROLL / MOVE / END_TURN / RESIGN — в следующих циклах #34+.
 type Handler struct {
 	mgr *game.Manager
+	// OriginPatterns — разрешённые Origin (паттерны coder/websocket). Пусто →
+	// строгая same-origin проверка (дефолт). "*" → принимать любой Origin —
+	// для self-host за туннелем/реверс-прокси, где Host ≠ Origin. Задаётся из
+	// env ALLOWED_ORIGINS в main.go.
+	OriginPatterns []string
 }
 
 // NewHandler собирает handler с заданным менеджером игр.
@@ -43,7 +48,11 @@ func NewHandler(mgr *game.Manager) *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token := extractBearerToken(r.Header.Get("Authorization"))
 
-	conn, err := websocket.Accept(w, r, nil)
+	var acceptOpts *websocket.AcceptOptions
+	if len(h.OriginPatterns) > 0 {
+		acceptOpts = &websocket.AcceptOptions{OriginPatterns: h.OriginPatterns}
+	}
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		return
 	}
