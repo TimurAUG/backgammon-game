@@ -79,6 +79,20 @@ describe('checkerAt (#12)', () => {
   })
 })
 
+describe('checkerAt overlap when stack is tall (#5)', () => {
+  test('checkerAt_fullStack15_topmostStaysWithinHalf', () => {
+    // 15 шашек на нижнем пункте: верхняя (index 14) не должна вылезать за центр.
+    const top = checkerAt(1, 14, 15)
+    expect(top.cy).toBeGreaterThanOrEqual(VIEWBOX_HEIGHT / 2)
+  })
+
+  test('checkerAt_fullStack15_overlapsWithStepBelowDiameter', () => {
+    const c0 = checkerAt(1, 0, 15)
+    const c1 = checkerAt(1, 1, 15)
+    expect(c0.cy - c1.cy).toBeLessThan(CHECKER_DIAMETER)
+  })
+})
+
 describe('viewBox constants', () => {
   test('viewBox_dimensionsAre800x600', () => {
     expect(VIEWBOX_WIDTH).toBe(800)
