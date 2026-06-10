@@ -39,6 +39,15 @@ func main() {
 	mux.Handle("/ws", ws.NewHandler(mgr))
 	rest.NewHandler(mgr).Register(mux)
 
+	// В проде (Docker/Fly) отдаём собранный SPA из STATIC_DIR с того же origin,
+	// что и /ws и /api — тогда wss и проверка Origin работают без CORS/прокси.
+	// Локально переменная не задана → статику отдаёт Vite-dev, Go только API/WS.
+	// Паттерн "/" наименее специфичен, поэтому /ws и /api/* имеют приоритет.
+	if staticDir := os.Getenv("STATIC_DIR"); staticDir != "" {
+		mux.Handle("/", http.FileServer(http.Dir(staticDir)))
+		log.Printf("serving static SPA from %s", staticDir)
+	}
+
 	srv := &http.Server{
 		Addr:              *addr,
 		Handler:           mux,
