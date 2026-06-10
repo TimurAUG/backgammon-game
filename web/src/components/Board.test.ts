@@ -214,3 +214,42 @@ describe('Board click target → onMove (#20)', () => {
     expect(screen.getByTestId('point-1')).toHaveClass('selected')
   })
 })
+
+describe('Board bear-off UI (#20b)', () => {
+  test('Board_selectCheckerWithBearOff_showsBearOffControl', async () => {
+    const board = emptyBoard()
+    board[5] = 3 // 3 белых на пункте 6
+    const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    expect(screen.queryByTestId('bear-off')).toBeNull()
+
+    await fireEvent.click(screen.getByTestId('point-6'))
+
+    expect(screen.getByTestId('bear-off')).toBeInTheDocument()
+  })
+
+  test('Board_clickBearOff_callsOnMoveWithToZero', async () => {
+    const board = emptyBoard()
+    board[5] = 3
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
+
+    await fireEvent.click(screen.getByTestId('point-6'))
+    await fireEvent.click(screen.getByTestId('bear-off'))
+
+    expect(onMove).toHaveBeenCalledWith(6, 0)
+  })
+
+  test('Board_selectCheckerWithoutBearOff_hidesBearOffControl', async () => {
+    const board = emptyBoard()
+    board[23] = 5 // белые на 24, только обычный ход
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-24'))
+
+    expect(screen.queryByTestId('bear-off')).toBeNull()
+  })
+})
