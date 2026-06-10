@@ -472,25 +472,57 @@ func statusString(s domain.GameStatus) string {
 type Manager struct {
 	storage Storage
 	rng     io.Reader
+	ids     io.Reader // источник для gameID/token (crypto/rand; фикс-reader в тестах)
 }
 
 // NewManager создаёт менеджер с in-memory Storage и crypto/rand в качестве
 // источника случайности.
 func NewManager() *Manager {
-	return &Manager{storage: NewMemoryStorage(), rng: crand.Reader}
+	return &Manager{storage: NewMemoryStorage(), rng: crand.Reader, ids: crand.Reader}
 }
 
 // NewManagerWithRand — конструктор для тестов с фиксированным rng
 // (bytes.Reader с заранее подготовленными байтами). Использует in-memory
 // Storage.
 func NewManagerWithRand(rng io.Reader) *Manager {
-	return &Manager{storage: NewMemoryStorage(), rng: rng}
+	return &Manager{storage: NewMemoryStorage(), rng: rng, ids: crand.Reader}
 }
 
 // NewManagerWithStorage позволяет подключить произвольный Storage —
 // например, Postgres (#36). Источник случайности задаётся отдельно.
 func NewManagerWithStorage(storage Storage, rng io.Reader) *Manager {
-	return &Manager{storage: storage, rng: rng}
+	return &Manager{storage: storage, rng: rng, ids: crand.Reader}
+}
+
+// CreateGame генерит новую игру: случайные gameID (8 байт) и creator-token
+// (16 байт) через ids, начальную доску, creator-токен в слоте White (Black
+// свободен — туда войдёт второй игрок через JoinByID). Сохраняет и возвращает
+// gameID и token для передачи клиенту.
+func (m *Manager) CreateGame() (string, string, error) {
+	gameID, err := generateID(m.ids, 8)
+	if err != nil {
+		return "", "", err
+	}
+	token, err := generateID(m.ids, 16)
+	if err != nil {
+		return "", "", err
+	}
+	g := &Game{
+		ID: gameID,
+		State: domain.GameState{
+			Board:       domain.InitialBoard(),
+			Turn:        domain.White,
+			Status:      domain.StatusWaitingForRoll,
+			IsFirstMove: [2]bool{true, true},
+		},
+	}
+	g.rng = m.rng
+	g.storage = m.storage
+	g.tokens[domain.White] = token
+	if err := m.storage.SaveGame(g); err != nil {
+		return "", "", err
+	}
+	return gameID, token, nil
 }
 
 // JoinGame регистрирует соединение conn в игре с id.
