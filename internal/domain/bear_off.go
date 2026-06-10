@@ -86,11 +86,14 @@ func IsLegalBearOff(b Board, c Color, from Point, pip uint8) bool {
 		}
 		return true
 	case Black:
-		// from > exact, путь дальше от выкида = меньший номер.
-		if from <= exact {
+		// Чёрные тоже выкидывают в сторону МЕНЬШИХ номеров (18→13→выкид),
+		// поэтому логика зеркальна белым: from ближе к выкиду (< exact),
+		// и между from и exact не должно быть шашек цвета (они дальше от
+		// выкида → ими и надо ходить переборным пипсом).
+		if from >= exact {
 			return false
 		}
-		for p := exact; p < from; p++ {
+		for p := from + 1; p <= exact; p++ {
 			if b[p-1] < 0 {
 				return false
 			}
@@ -104,14 +107,15 @@ func IsLegalBearOff(b Board, c Color, from Point, pip uint8) bool {
 // шашку точным образом.
 //
 // Белый: путь 6→1→выкид, поэтому пипс N точно выкидывает с пункта N.
-// Чёрный: путь 18→13→выкид, поэтому пипс N точно выкидывает с пункта 19−N
-// (пипс 1 → пункт 18, пипс 6 → пункт 13).
+// Чёрный: путь 18→13→выкид (выкид в сторону меньших номеров), пункт N
+// требует ровно пипс N−12, поэтому пипс N точно выкидывает с пункта 12+N
+// (пипс 1 → пункт 13, пипс 6 → пункт 18). Согласовано с NextPoint.
 func bearOffPointForPip(c Color, pip uint8) Point {
 	switch c {
 	case White:
 		return Point(pip)
 	case Black:
-		return Point(19 - int(pip))
+		return Point(12 + int(pip))
 	}
 	return 0
 }

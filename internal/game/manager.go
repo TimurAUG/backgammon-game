@@ -184,10 +184,11 @@ func winKindString(k domain.WinKind) string {
 func findPipFor(s domain.GameState, from, to domain.Point) (uint8, bool) {
 	if to == 0 {
 		// Выкид: пробуем сначала точный пипс, потом переборные.
-		// Точный пипс для белого = from; для чёрного = 19 - from.
+		// Точный пипс для белого = from; для чёрного = from - 12
+		// (пункт 13 → пип 1, пункт 18 → пип 6). Согласовано с NextPoint.
 		exact := uint8(from)
 		if s.Turn == domain.Black {
-			exact = uint8(19 - int(from))
+			exact = uint8(from) - 12
 		}
 		for _, p := range s.Dice.Remaining {
 			if p == exact && domain.IsLegalBearOff(s.Board, s.Turn, from, p) {
