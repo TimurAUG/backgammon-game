@@ -136,9 +136,14 @@
     display: block;
     width: 100%;
     height: auto;
-    max-width: 800px;
-    border: 2px solid #5a3a1e;
+    max-width: 760px;
     background: #e7c79b;
+    /* Деревянная рамка/окантовка под реальную доску (#4). */
+    border: 14px solid #6b4423;
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 2px #3b2410,
+      0 6px 18px rgba(0, 0, 0, 0.45);
   }
   .bar {
     fill: #5a3a1e;
