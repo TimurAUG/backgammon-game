@@ -68,6 +68,19 @@
     }
     // клик по чужой/пустой при невыделенной → ничего
   }
+
+  // Выкид: у пункта 0 на доске нет, поэтому отдельный контрол. Появляется,
+  // когда у выделенной шашки есть легальный выкид (to === 0).
+  const bearOffAvailable = $derived(
+    selectedFrom !== null && legalMoves.some((m) => m.from === selectedFrom && m.to === 0),
+  )
+
+  function handleBearOff(): void {
+    if (selectedFrom === null) return
+    const from = selectedFrom
+    selectedFrom = null
+    onMove(from, 0)
+  }
 </script>
 
 <svg
@@ -105,6 +118,12 @@
   {/each}
 </svg>
 
+{#if bearOffAvailable}
+  <button type="button" class="bear-off" data-testid="bear-off" onclick={handleBearOff}>
+    Сбросить шашку →
+  </button>
+{/if}
+
 <style>
   .board {
     display: block;
@@ -137,5 +156,20 @@
     fill: #2a1e10;
     stroke: #f4ece1;
     stroke-width: 2;
+  }
+  .bear-off {
+    display: block;
+    margin: 0.5rem auto 0;
+    background: #aed581;
+    color: #1b5e20;
+    border: 2px solid #2e7d32;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .bear-off:hover {
+    background: #9ccc65;
   }
 </style>
