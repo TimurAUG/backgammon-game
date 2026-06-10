@@ -187,12 +187,13 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 6 — действия игрока (`ActionBar.svelte` с 4 кнопками ROLL_FOR_FIRST/ROLL/END_TURN/RESIGN — 9 тестов; `Board.svelte` расширен опциональными legalMoves/myColor/onMove + локальный selectedFrom-стейт + подсветка `selected`/`legal-target` — 10 новых тестов клик-режима).
 - ✅ Этап 7 — конец игры (`GameOver.svelte` модалка с локализацией Белые/Чёрные + Оин/Марс/Кокс; «Вы победили»/«Вы проиграли» при наличии myColor; кнопка «Новая игра» → onNewGame; 10 тестов).
 - ✅ Этап 8 — Connect и реконнект (`Connect.svelte` форма+localStorage; `App.svelte` — маршрутизация Connect↔Game, проводка WSClient, авто-подключение из localStorage, `ERROR{UNAUTHORIZED}` → чистка кредов и возврат в Connect; стор `connection.svelte.ts` + `WSClient.onStateChange` (connecting/connected/reconnecting) + `ActionBar.disabled` → `reconnecting` блокирует ActionBar; весь набор — 137 тестов).
+- ✅ Этап 9 — invite-флоу (`lib/api.ts` createGame/joinGame; `Connect` «Создать игру» + ссылка-приглашение `?game=<id>` + вход по приглашению; `App` читает `?game=` из URL; Vite-прокси `/api`; ручной ввод — видимый фоллбэк. Бэкенд: SPEC #38–#41. Плюс session-добавка #27 — кнопка «Сменить игру». 147 тестов фронта).
 
 ## 9. Открытые вопросы
 
 1. ~~**STATE неполный на бекенде.**~~ ✅ **Закрыто.** `ServerMessage` получил `BorneOffPayload` и `IsFirstMovePayload`; `game.StateMessage` заполняет оба поля из доменного состояния. Этап 3 фронта (gameStore) разблокирован.
 2. **`ROOM_FULL` не задокументирован в `nardy-protocol`.** Бекенд реально шлёт его (`internal/transport/ws/handler.go:76` при отказе третьему клиенту), но в скилле этот код не упомянут. Поправить отдельным docs-циклом: добавить `ROOM_FULL` в таблицу кодов ошибок в `nardy-protocol/SKILL.md`, после — расширить `ErrorCode` в `web/src/protocol/messages.ts`.
-2. **REST для invite-флоу.** Сейчас `gameId` и `token` вводятся вручную в Connect. Когда появится REST (создание игры, генерация приглашения) — Connect заменится на «Создать игру» / «Войти по ссылке».
+2. ~~**REST для invite-флоу.**~~ ✅ **Закрыто.** `POST /api/games` (создать) и `POST /api/games/{id}/join` (вход по ссылке) генерят `gameId`/`token` на сервере (crypto/rand); токен — только в теле ответа, не в URL. Connect получил «Создать игру» + ссылку-приглашение и вход по `?game=`; ручной ввод оставлен фоллбэком. Бэкенд SPEC #38–#41, фронт #28–#30.
 3. **Drag&drop.** В MVP не входит — только клики. Решить, делать ли HTML5 drag, pointer events или библиотеку, когда возьмём цикл.
 4. **i18n.** Пока — только русский, без обёрток. Когда добавим английский — ввести `t()` и каталоги.
 5. **Стилизация.** Старт — ванильный CSS. При росте UI пересмотреть.

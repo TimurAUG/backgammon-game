@@ -218,6 +218,7 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 - ✅ Этап 9 (#29–#30): обязательные ходы (`CanUsePip` — база для приоритета бо́льшего и перехода хода)
 - ✅ Этап 10 (#31–#32): оркестрация (`GameState`, `Apply` обновляет `Remaining` через `Dice.Use`, `IsTurnComplete` через `CanUsePip`)
 - ✅ Этап 11 (#33–#37): транспорт и сессии. #33 JOIN, #34 полный поток ROLL_FOR_FIRST/ROLL/MOVE/LEGAL_MOVES/END_TURN/GAME_OVER/auto-END_TURN, #35 реконнект через token, #36 Postgres persistence (Storage интерфейс + PostgresStorage с JSONB + auto-save), #37 auth — Bearer-токен в Authorization-header WS-handshake (401 без upgrade при отсутствии).
+- ✅ Этап 12 (#38–#41): REST invite-флоу — `generateID` (crypto/rand→hex), `Manager.CreateGame`/`JoinByID` (сервер генерит gameId/token и резервирует слоты; `ErrGameNotFound`/`ErrRoomFull`), хендлер `internal/transport/rest` (`POST /api/games`, `POST /api/games/{id}/join` → 404/409), проводка в `main.go`. WS-JOIN подхватывает зарезервированный токен (attachLocked по совпадению).
 
 **Бонусы вне плана:** `cmd/server` (точка входа с выбором Storage по DATABASE_URL); LegalMoves DFS-lookahead (фильтрация ходов, ведущих к неизбежному блоку 6).
 
