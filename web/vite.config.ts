@@ -11,6 +11,8 @@ export default defineConfig({
       // Vite проксирует на Go-сервер. changeOrigin НЕ ставим — иначе Host
       // разойдётся с Origin и coder/websocket вернёт 403 на хендшейке.
       '/ws': { target: 'ws://localhost:8080', ws: true },
+      // REST invite-флоу (createGame/joinGame) — на тот же Go-бэкенд.
+      '/api': { target: 'http://localhost:8080' },
     },
   },
   test: {
