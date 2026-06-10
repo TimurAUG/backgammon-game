@@ -284,6 +284,44 @@ func TestHandler_RollForFirst(t *testing.T) {
 	}
 }
 
+// TestHandler_RollForFirst_SendsFirstRollValues — после определения первого
+// хода сервер шлёт FIRST_ROLL с индивидуальными бросками обоих цветов (#2),
+// чтобы клиент показал «кто сколько бросил». rng [4,2] → white=5, black=3.
+func TestHandler_RollForFirst_SendsFirstRollValues(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1)
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+
+	var fr *protocol.FirstRollPayload
+	for i := 0; i < 5 && fr == nil; i++ {
+		m := readMessage(t, ctx, conn1)
+		if m.Type == "FIRST_ROLL" {
+			fr = m.FirstRoll
+		}
+	}
+	require.NotNil(t, fr, "должно прийти FIRST_ROLL")
+	require.Equal(t, 5, fr.White)
+	require.Equal(t, 3, fr.Black)
+}
+
 // TestHandler_LegalMovesAfterRollForFirst — после определения первого хода
 // победитель (white при rng [4,2]) получает кроме STATE ещё и LEGAL_MOVES
 // со списком одиночных ходов с учётом текущих пипсов.
