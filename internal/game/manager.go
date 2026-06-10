@@ -40,6 +40,10 @@ var ErrRuleOfSix = errors.New("rule of six violation")
 // статусу партии (например, ROLL при WaitingForMove).
 var ErrInvalidState = errors.New("invalid state")
 
+// ErrGameNotFound возвращается из JoinByID, если игры с заданным id нет
+// (вход по приглашению в несуществующую/устаревшую игру).
+var ErrGameNotFound = errors.New("game not found")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -523,6 +527,44 @@ func (m *Manager) CreateGame() (string, string, error) {
 		return "", "", err
 	}
 	return gameID, token, nil
+}
+
+// JoinByID резервирует свободный слот в существующей игре под нового игрока:
+// генерит token (16 байт), кладёт в первый пустой слот tokens, сохраняет.
+// Возвращает token для клиента. ErrGameNotFound если игры нет, ErrRoomFull
+// если оба слота заняты. WS-JOIN с этим token подключит игрока к слоту
+// (attachLocked сопоставляет по совпадению токена).
+func (m *Manager) JoinByID(gameID string) (string, error) {
+	g, ok := m.storage.LoadGame(gameID)
+	if !ok {
+		return "", ErrGameNotFound
+	}
+	g.rng = m.rng
+	g.storage = m.storage
+
+	token, err := generateID(m.ids, 16)
+	if err != nil {
+		return "", err
+	}
+
+	g.mu.Lock()
+	reserved := false
+	for c := 0; c < 2; c++ {
+		if g.tokens[c] == "" {
+			g.tokens[c] = token
+			reserved = true
+			break
+		}
+	}
+	g.mu.Unlock()
+
+	if !reserved {
+		return "", ErrRoomFull
+	}
+	if err := m.storage.SaveGame(g); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // JoinGame регистрирует соединение conn в игре с id.
