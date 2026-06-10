@@ -90,6 +90,25 @@ describe('Game action wiring (#24a)', () => {
   })
 })
 
+describe('Game first-roll banner (#2)', () => {
+  test('Game_firstRoll_showsWhoRolledWhat', () => {
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+    applyServerMessage(stateFixture({ status: 'waitingForMove', turn: 'white' }))
+    render(Game, { props: noop })
+
+    const banner = screen.getByTestId('first-roll-banner')
+    expect(banner).toHaveTextContent('5')
+    expect(banner).toHaveTextContent('3')
+  })
+
+  test('Game_noFirstRoll_noBanner', () => {
+    applyServerMessage(stateFixture())
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('first-roll-banner')).toBeNull()
+  })
+})
+
 describe('Game switch-game (#27)', () => {
   test('Game_switchGameButton_callsOnNewGame', async () => {
     const onNewGame = vi.fn()
