@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/TimurAUG/backgammon-game/internal/game"
+	"github.com/TimurAUG/backgammon-game/internal/transport/rest"
 	"github.com/TimurAUG/backgammon-game/internal/transport/ws"
 )
 
@@ -36,6 +37,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws.NewHandler(mgr))
+	rest.NewHandler(mgr).Register(mux)
 
 	srv := &http.Server{
 		Addr:              *addr,
