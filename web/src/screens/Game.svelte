@@ -23,6 +23,9 @@
   // Реконнект → ActionBar заблокирован (сокет закрыт, send бы бросил).
   const blocked = $derived(connection.state === 'reconnecting')
 
+  // Первый бросок: кто сколько бросил (#2).
+  const firstRoll = $derived(gameState.firstRoll)
+
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })
   }
@@ -34,6 +37,14 @@
       Сменить игру
     </button>
   </header>
+
+  {#if firstRoll}
+    <div class="first-roll" data-testid="first-roll-banner">
+      Первый бросок — Белые: <b>{firstRoll.white}</b>, Чёрные: <b>{firstRoll.black}</b>. Первым ходит
+      {firstRoll.white > firstRoll.black ? 'Белые' : 'Чёрные'}.
+    </div>
+  {/if}
+
   <Board
     board={gameState.board}
     legalMoves={gameState.legalMoves}
@@ -87,5 +98,14 @@
   }
   .leave:hover {
     background: #e7c79b;
+  }
+  .first-roll {
+    background: #f4ece1;
+    border: 1px solid #c19a6b;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 14px;
+    color: #2a1e10;
+    text-align: center;
   }
 </style>
