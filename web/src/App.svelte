@@ -60,6 +60,11 @@
     endSession()
   }
 
+  // Вход по приглашению: ?game=<id> в URL → Connect предложит войти в эту
+  // игру (FRONTEND_SPEC #30). Сохранённые креды (авто-реконнект ниже) имеют
+  // приоритет — refresh по ссылке не делает двойной клейм слота.
+  const inviteGameId = new URLSearchParams(location.search).get('game')
+
   // Авто-подключение: при сохранённых кредах минуем Connect и сразу
   // открываем сессию — сервер вернёт текущий STATE (FRONTEND_SPEC #24c).
   const saved = loadCredentials()
@@ -67,7 +72,7 @@
 </script>
 
 {#if client === null}
-  <Connect onConnect={startSession} />
+  <Connect onConnect={startSession} {inviteGameId} />
 {:else}
   <Game onAction={handleAction} onNewGame={handleNewGame} />
 {/if}
