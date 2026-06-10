@@ -13,6 +13,24 @@ docker run --rm -p 8080:8080 nardy
 # открыть http://localhost:8080 — SPA, /ws и /api на одном порту
 ```
 
+## Без карты: self-host + Cloudflare Tunnel
+
+Если платёжка PaaS не принимает карту — публикуем со своей машины через
+бесплатный временный туннель (без аккаунта и карты):
+
+```sh
+brew install cloudflared
+docker run --rm -p 8080:8080 -e ALLOWED_ORIGINS='*' nardy
+# в другом терминале:
+cloudflared tunnel --url http://localhost:8080
+# → https://<random>.trycloudflare.com — отдаёшь другу
+```
+
+`ALLOWED_ORIGINS='*'` обязателен за туннелем/реверс-прокси: там `Host` ≠ `Origin`,
+и строгая проверка WebSocket иначе вернёт 403. Туннель даёт HTTPS → `wss` работает.
+URL временный (меняется при перезапуске); для постоянного — именованный туннель
+(бесплатный Cloudflare-аккаунт) или VPS с Caddy/доменом.
+
 ## Первый деплой
 
 ```sh
