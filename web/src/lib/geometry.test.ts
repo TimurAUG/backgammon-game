@@ -94,9 +94,9 @@ describe('checkerAt overlap when stack is tall (#5)', () => {
 })
 
 describe('viewBox constants', () => {
-  test('viewBox_dimensionsAre800x600', () => {
+  test('viewBox_dimensions', () => {
     expect(VIEWBOX_WIDTH).toBe(800)
-    expect(VIEWBOX_HEIGHT).toBe(600)
+    expect(VIEWBOX_HEIGHT).toBe(760)
   })
 
   test('columnWidth_isViewBoxWidthDivided12', () => {

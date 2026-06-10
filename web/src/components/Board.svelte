@@ -24,7 +24,7 @@
   }: Props = $props()
 
   const POINTS: number[] = Array.from({ length: 24 }, (_, i) => i + 1)
-  const TRIANGLE_HEIGHT = 250
+  const TRIANGLE_HEIGHT = 320
   const TRIANGLE_HALF_BASE = COLUMN_WIDTH * 0.4
 
   let selectedFrom = $state<number | null>(null)
@@ -103,7 +103,7 @@
 
   {#each POINTS as point (point)}
     {#each Array.from({ length: checkerCount(point) }, (_, j) => j) as j (j)}
-      {@const pos = checkerAt(point, j)}
+      {@const pos = checkerAt(point, j, checkerCount(point))}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <circle

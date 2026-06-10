@@ -5,7 +5,7 @@
 //   12 11 10  9  8  7  6  5  4  3  2  1   ← нижний ряд, шашки растут вверх
 
 export const VIEWBOX_WIDTH = 800
-export const VIEWBOX_HEIGHT = 600
+export const VIEWBOX_HEIGHT = 760
 export const COLUMNS = 12
 export const COLUMN_WIDTH = VIEWBOX_WIDTH / COLUMNS
 
@@ -51,9 +51,22 @@ export interface CheckerPosition {
   r: number
 }
 
-export function checkerAt(point: number, index: number): CheckerPosition {
+// До STACK_NO_OVERLAP шашек в стопке кладём вплотную (шаг = диаметр); сверх —
+// шаг сжимаем, чтобы вся стопка влезла в свою половину поля (15 шашек тоже).
+const STACK_NO_OVERLAP = 5
+
+function stackStep(count: number): number {
+  if (count <= STACK_NO_OVERLAP) return CHECKER_DIAMETER
+  // Центр верхней шашки не должен выходить за середину поля.
+  const maxOffset = VIEWBOX_HEIGHT / 2 - CHECKER_RADIUS
+  return Math.min(CHECKER_DIAMETER, (maxOffset - CHECKER_BASE_OFFSET) / (count - 1))
+}
+
+// checkerAt — позиция index-й шашки в стопке из count штук на пункте.
+// count управляет наложением: 0/малое → без наложения (легаси-вызовы).
+export function checkerAt(point: number, index: number, count = 0): CheckerPosition {
   const anchor = pointAnchor(point)
-  const offset = CHECKER_BASE_OFFSET + index * CHECKER_DIAMETER
+  const offset = CHECKER_BASE_OFFSET + index * stackStep(count)
   const cy = anchor.direction === 'up' ? anchor.y - offset : anchor.y + offset
   return { cx: anchor.x, cy, r: CHECKER_RADIUS }
 }
