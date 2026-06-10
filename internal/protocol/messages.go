@@ -49,6 +49,14 @@ type IsFirstMovePayload struct {
 	Black bool `json:"black"`
 }
 
+// FirstRollPayload — индивидуальные броски обоих цветов при определении
+// первого хода (кто больше — ходит первым). Шлётся в FIRST_ROLL, чтобы
+// клиент показал «кто сколько бросил».
+type FirstRollPayload struct {
+	White int `json:"white"`
+	Black int `json:"black"`
+}
+
 // ServerMessage — сообщение от сервера клиенту.
 //
 // Общий тип для STATE и ERROR — наименьшее количество разных структур
@@ -63,6 +71,7 @@ type ServerMessage struct {
 	Dice        *DicePayload        `json:"dice,omitempty"`
 	BorneOff    *BorneOffPayload    `json:"borneOff,omitempty"`
 	IsFirstMove *IsFirstMovePayload `json:"isFirstMove,omitempty"`
+	FirstRoll   *FirstRollPayload   `json:"firstRoll,omitempty"`
 	Moves       []MovePayload       `json:"moves,omitempty"`
 	Winner      string              `json:"winner,omitempty"`
 	Kind        string              `json:"kind,omitempty"`

@@ -317,6 +317,7 @@ func (g *Game) RollForFirst(c domain.Color) error {
 		return nil
 	}
 
+	var firstWhite, firstBlack uint8
 	for {
 		whiteVal, err := domain.RollOne(g.rng)
 		if err != nil {
@@ -329,6 +330,7 @@ func (g *Game) RollForFirst(c domain.Color) error {
 		if whiteVal == blackVal {
 			continue
 		}
+		firstWhite, firstBlack = whiteVal, blackVal
 		winner, winnerVal, loserVal := domain.White, whiteVal, blackVal
 		if blackVal > whiteVal {
 			winner, winnerVal, loserVal = domain.Black, blackVal, whiteVal
@@ -341,7 +343,22 @@ func (g *Game) RollForFirst(c domain.Color) error {
 
 	g.broadcastStateLocked()
 	g.sendLegalMovesOrAutoEndTurnLocked(g.State.Turn)
+	g.broadcastFirstRollLocked(firstWhite, firstBlack)
 	return nil
+}
+
+// broadcastFirstRollLocked рассылает индивидуальные броски первого хода обоим
+// клиентам (FIRST_ROLL) — чтобы показать «кто сколько бросил». С захваченным mu.
+func (g *Game) broadcastFirstRollLocked(white, black uint8) {
+	msg := protocol.ServerMessage{
+		Type:      "FIRST_ROLL",
+		FirstRoll: &protocol.FirstRollPayload{White: int(white), Black: int(black)},
+	}
+	for _, conn := range g.conns {
+		if conn != nil {
+			_ = conn.Send(msg)
+		}
+	}
 }
 
 // broadcastStateLocked рассылает текущее состояние всем подключённым

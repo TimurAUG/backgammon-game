@@ -405,6 +405,8 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 	_ = readMessage(t, ctx, conn1) // STATE
 	_ = readMessage(t, ctx, conn2) // STATE
 	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+	_ = readMessage(t, ctx, conn2) // FIRST_ROLL
 
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
 	require.NoError(t, err)
@@ -636,6 +638,8 @@ func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*webso
 	_ = readMessage(t, ctx, conn1) // STATE
 	_ = readMessage(t, ctx, conn2) // STATE
 	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+	_ = readMessage(t, ctx, conn2) // FIRST_ROLL
 
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
 	require.NoError(t, err)
