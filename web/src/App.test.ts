@@ -20,6 +20,7 @@ beforeEach(() => {
   resetGameState()
   resetConnectionState()
   MockWebSocket.reset()
+  window.history.replaceState(null, '', '/')
 })
 
 function testCreateClient(creds: Credentials): WSClient {
@@ -101,6 +102,24 @@ describe('App new game (#24b)', () => {
 
     expect(screen.getByLabelText('ID игры')).toBeInTheDocument()
     expect(loadCredentials()).toBeNull()
+  })
+})
+
+describe('App invite link (#30)', () => {
+  test('App_gameParamInUrl_showsJoinInviteInConnect', () => {
+    window.history.replaceState(null, '', '/?game=g-xyz')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
+    expect(screen.queryByTestId('create-game')).toBeNull()
+  })
+
+  test('App_noGameParam_showsCreateInConnect', () => {
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.queryByTestId('join-invite')).toBeNull()
   })
 })
 
