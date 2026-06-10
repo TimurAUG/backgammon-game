@@ -4,12 +4,19 @@
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { createGame, joinGame } from '../lib/api'
 import { loadCredentials } from '../lib/credentials'
 
 import Connect from './Connect.svelte'
 
+vi.mock('../lib/api', () => ({
+  createGame: vi.fn(),
+  joinGame: vi.fn(),
+}))
+
 beforeEach(() => {
   localStorage.clear()
+  vi.clearAllMocks()
 })
 
 async function fillAndSubmit(gameId: string, token: string): Promise<void> {
@@ -50,5 +57,51 @@ describe('Connect form (#23)', () => {
     await fillAndSubmit('   ', 'tok-abc')
 
     expect(onConnect).not.toHaveBeenCalled()
+  })
+})
+
+describe('Connect invite (#29)', () => {
+  test('Connect_createGame_rendersInviteLinkWithGameId', async () => {
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('create-game'))
+
+    const link = (await screen.findByTestId('invite-link')) as HTMLInputElement
+    expect(link.value).toContain('?game=g-new')
+  })
+
+  test('Connect_createGame_persistsCredentials', async () => {
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+
+    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok' })
+  })
+
+  test('Connect_afterCreate_enterGame_callsOnConnect', async () => {
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    const onConnect = vi.fn()
+    render(Connect, { props: { onConnect } })
+
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await fireEvent.click(await screen.findByTestId('enter-game'))
+
+    expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-new', token: 'tok' })
+  })
+
+  test('Connect_inviteGameId_join_callsJoinGameAndOnConnect', async () => {
+    vi.mocked(joinGame).mockResolvedValue({ gameId: 'g-inv', token: 'tok2' })
+    const onConnect = vi.fn()
+    render(Connect, { props: { onConnect, inviteGameId: 'g-inv' } })
+
+    await fireEvent.click(screen.getByTestId('join-invite'))
+
+    expect(joinGame).toHaveBeenCalledWith('g-inv')
+    await vi.waitFor(() =>
+      expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-inv', token: 'tok2' }),
+    )
   })
 })
