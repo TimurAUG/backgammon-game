@@ -110,6 +110,28 @@ describe('checkerAt overlap when stack is tall (#5)', () => {
   })
 })
 
+describe('pointAnchor orientation flip (#1)', () => {
+  test('pointAnchor_flipped_rotates180_point24goesToBottomLeft', () => {
+    // Флип = поворот на 180°: пункт 24 (верх-право) уезжает туда же, где
+    // пункт 12 без флипа (низ-лево) — «свой цвет слева».
+    const flipped24 = pointAnchor(24, true)
+    const normal12 = pointAnchor(12, false)
+    expect(flipped24.x).toBeCloseTo(normal12.x, 5)
+    expect(flipped24.y).toBe(normal12.y)
+    expect(flipped24.direction).toBe(normal12.direction)
+  })
+
+  test('pointAnchor_defaultIsNotFlipped', () => {
+    expect(pointAnchor(1, false)).toEqual(pointAnchor(1))
+  })
+
+  test('checkerAt_flipped_usesFlippedAnchor', () => {
+    // Флипнутый нижний пункт 1 оказывается сверху (cy в верхней половине).
+    const c = checkerAt(1, 0, 1, true)
+    expect(c.cy).toBeLessThan(VIEWBOX_HEIGHT / 2)
+  })
+})
+
 describe('viewBox constants', () => {
   test('viewBox_dimensions', () => {
     expect(VIEWBOX_WIDTH).toBe(760)
