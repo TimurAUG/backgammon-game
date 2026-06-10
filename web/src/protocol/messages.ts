@@ -54,6 +54,7 @@ export type ServerMessage =
       dice?: Dice
     }
   | { type: 'LEGAL_MOVES'; moves: Move[] }
+  | { type: 'FIRST_ROLL'; firstRoll: { white: number; black: number } }
   | { type: 'OPPONENT_JOINED'; name?: string }
   | { type: 'OPPONENT_LEFT' }
   | { type: 'GAME_OVER'; winner: Color; kind: WinKind }

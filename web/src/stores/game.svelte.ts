@@ -17,6 +17,7 @@ export interface GameStoreState {
   legalMoves: Move[]
   gameOver: { winner: Color; kind: WinKind } | null
   myColor: Color | null
+  firstRoll: { white: number; black: number } | null
 }
 
 function initialGameState(): GameStoreState {
@@ -30,6 +31,7 @@ function initialGameState(): GameStoreState {
     legalMoves: [],
     gameOver: null,
     myColor: null,
+    firstRoll: null,
   }
 }
 
@@ -54,6 +56,9 @@ export function applyServerMessage(msg: ServerMessage): void {
       break
     case 'LEGAL_MOVES':
       gameState.legalMoves = msg.moves
+      break
+    case 'FIRST_ROLL':
+      gameState.firstRoll = msg.firstRoll
       break
     case 'GAME_OVER':
       gameState.gameOver = { winner: msg.winner, kind: msg.kind }
