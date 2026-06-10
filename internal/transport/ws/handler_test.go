@@ -24,6 +24,44 @@ import (
 // случайно реконнектился бы вместо подключения как соперник.
 var dialCounter atomic.Int32
 
+// TestHandler_CrossOrigin_RejectedByDefault — по умолчанию проверка Origin
+// строгая (coder/websocket): запрос с чужим Origin отклоняется. Self-host.
+func TestHandler_CrossOrigin_RejectedByDefault(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": {"http://evil.test"}},
+	})
+
+	require.Error(t, err, "чужой Origin должен отклоняться при строгой проверке")
+}
+
+// TestHandler_CrossOrigin_AllowedWhenConfigured — с OriginPatterns=["*"]
+// (ALLOWED_ORIGINS=*) чужой Origin принимается. Нужно для self-host за
+// туннелем/реверс-прокси, где Host ≠ Origin (Cloudflare Tunnel, Caddy и т.п.).
+func TestHandler_CrossOrigin_AllowedWhenConfigured(t *testing.T) {
+	mgr := game.NewManager()
+	h := ws.NewHandler(mgr)
+	h.OriginPatterns = []string{"*"}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": {"http://evil.test"}},
+	})
+
+	require.NoError(t, err, "чужой Origin должен приниматься при ALLOWED_ORIGINS=*")
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
 // TestHandler_JoinReturnsState — интеграционный тест на минимальный поток:
 //   1. Клиент открывает WS-соединение.
 //   2. Шлёт JOIN с gameId.
