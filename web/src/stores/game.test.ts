@@ -163,3 +163,19 @@ describe('applyServerMessage ERROR (#10)', () => {
     expect(JSON.parse(JSON.stringify(gameState))).toEqual(snapshot)
   })
 })
+
+describe('applyServerMessage FIRST_ROLL (#2)', () => {
+  test('gameStore_onFIRST_ROLL_storesValues', () => {
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+
+    expect(gameState.firstRoll).toEqual({ white: 5, black: 3 })
+  })
+
+  test('gameStore_reset_clearsFirstRoll', () => {
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+
+    resetGameState()
+
+    expect(gameState.firstRoll).toBeNull()
+  })
+})
