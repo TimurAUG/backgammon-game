@@ -31,8 +31,12 @@
 
   let selectedFrom = $state<number | null>(null)
 
-  function trianglePoints(point: number): string {
-    const a = pointAnchor(point)
+  // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
+  // слева (у чёрного/наблюдателя — как есть). #1.
+  const flipped = $derived(myColor === 'white')
+
+  function trianglePoints(point: number, flip: boolean): string {
+    const a = pointAnchor(point, flip)
     const tipY = a.direction === 'up' ? a.y - TRIANGLE_HEIGHT : a.y + TRIANGLE_HEIGHT
     return `${a.x - TRIANGLE_HALF_BASE},${a.y} ${a.x + TRIANGLE_HALF_BASE},${a.y} ${a.x},${tipY}`
   }
@@ -99,14 +103,14 @@
       class:selected={selectedFrom === point}
       class:legal-target={isLegalTarget(point)}
       data-testid="point-{point}"
-      points={trianglePoints(point)}
+      points={trianglePoints(point, flipped)}
       onclick={() => handlePointClick(point)}
     />
   {/each}
 
   {#each POINTS as point (point)}
     {#each Array.from({ length: checkerCount(point) }, (_, j) => j) as j (j)}
-      {@const pos = checkerAt(point, j, checkerCount(point))}
+      {@const pos = checkerAt(point, j, checkerCount(point), flipped)}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <circle

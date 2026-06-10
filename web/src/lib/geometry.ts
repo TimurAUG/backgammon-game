@@ -34,16 +34,22 @@ function columnX(col: number): number {
   return col * COLUMN_WIDTH + barGap + COLUMN_WIDTH / 2
 }
 
-export function pointAnchor(point: number): PointAnchor {
+// pointAnchor(point, flipped): якорь пункта. flipped=true поворачивает доску
+// на 180° (перспектива второго игрока) — нужно, чтобы свой цвет был слева.
+export function pointAnchor(point: number, flipped = false): PointAnchor {
   if (point < 1 || point > 24 || !Number.isInteger(point)) {
     throw new Error(`pointAnchor: point ${point} out of range [1..24]`)
   }
-  if (point <= 12) {
-    // нижний ряд: 1 справа (col 11), 12 слева (col 0)
-    return { x: columnX(COLUMNS - point), y: VIEWBOX_HEIGHT, direction: 'up' }
+  const base: PointAnchor =
+    point <= 12
+      ? { x: columnX(COLUMNS - point), y: VIEWBOX_HEIGHT, direction: 'up' } // 1 справа, 12 слева
+      : { x: columnX(point - 13), y: 0, direction: 'down' } // 13 слева, 24 справа
+  if (!flipped) return base
+  return {
+    x: VIEWBOX_WIDTH - base.x,
+    y: VIEWBOX_HEIGHT - base.y,
+    direction: base.direction === 'up' ? 'down' : 'up',
   }
-  // верхний ряд: 13 слева (col 0), 24 справа (col 11)
-  return { x: columnX(point - 13), y: 0, direction: 'down' }
 }
 
 export interface CheckerPosition {
@@ -64,9 +70,15 @@ function stackStep(count: number): number {
 }
 
 // checkerAt — позиция index-й шашки в стопке из count штук на пункте.
-// count управляет наложением: 0/малое → без наложения (легаси-вызовы).
-export function checkerAt(point: number, index: number, count = 0): CheckerPosition {
-  const anchor = pointAnchor(point)
+// count управляет наложением (0/малое → без наложения, легаси-вызовы),
+// flipped — ориентацией доски (см. pointAnchor).
+export function checkerAt(
+  point: number,
+  index: number,
+  count = 0,
+  flipped = false,
+): CheckerPosition {
+  const anchor = pointAnchor(point, flipped)
   const offset = CHECKER_BASE_OFFSET + index * stackStep(count)
   const cy = anchor.direction === 'up' ? anchor.y - offset : anchor.y + offset
   return { cx: anchor.x, cy, r: CHECKER_RADIUS }
