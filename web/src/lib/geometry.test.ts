@@ -44,6 +44,17 @@ describe('pointAnchor (#11)', () => {
     expect(() => pointAnchor(25)).toThrow()
     expect(() => pointAnchor(-1)).toThrow()
   })
+
+  test('pointAnchor_barGapWiderThanColumnStep (#3)', () => {
+    // Центральный бар: разрыв через бар (6↔7 низ, 18↔19 верх) шире обычного
+    // шага между соседними пунктами внутри половины.
+    expect(pointAnchor(6).x - pointAnchor(7).x).toBeGreaterThan(
+      pointAnchor(8).x - pointAnchor(9).x,
+    )
+    expect(pointAnchor(19).x - pointAnchor(18).x).toBeGreaterThan(
+      pointAnchor(21).x - pointAnchor(20).x,
+    )
+  })
 })
 
 describe('checkerAt (#12)', () => {
