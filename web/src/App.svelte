@@ -1,7 +1,7 @@
 <script lang="ts">
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
-  import { clearCredentials, loadCredentials, type Credentials } from './lib/credentials'
+  import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
   import { applyServerMessage, resetGameState } from './stores/game.svelte'
@@ -23,6 +23,8 @@
 
   // client === null → экран Connect; иначе → экран Game.
   let client = $state<WSClient | null>(null)
+  // Креды активной сессии — для личной ссылки возврата в Game.
+  let activeCreds = $state<Credentials | null>(null)
 
   function startSession(creds: Credentials): void {
     const c = createClient(creds)
@@ -30,6 +32,7 @@
     c.onStateChange(setConnectionState)
     c.connect()
     client = c
+    activeCreds = creds
   }
 
   function handleAction(msg: ClientMessage): void {
@@ -51,6 +54,7 @@
   function endSession(): void {
     client?.close()
     client = null
+    activeCreds = null
     clearCredentials()
     resetGameState()
     resetConnectionState()
@@ -60,19 +64,41 @@
     endSession()
   }
 
-  // Вход по приглашению: ?game=<id> в URL → Connect предложит войти в эту
-  // игру (FRONTEND_SPEC #30). Сохранённые креды (авто-реконнект ниже) имеют
-  // приоритет — refresh по ссылке не делает двойной клейм слота.
-  const inviteGameId = new URLSearchParams(location.search).get('game')
+  // Убирает token из адресной строки, оставляя ?game=<id> (публичный) — чтобы
+  // личный токен не оставался в истории браузера и не копировался случайно.
+  function stripTokenFromUrl(): void {
+    const url = new URL(location.href)
+    url.searchParams.delete('token')
+    window.history.replaceState(null, '', url.pathname + url.search)
+  }
 
-  // Авто-подключение: при сохранённых кредах минуем Connect и сразу
-  // открываем сессию — сервер вернёт текущий STATE (FRONTEND_SPEC #24c).
+  // Вход по приглашению: ?game=<id> в URL → Connect предложит войти в игру.
+  const params = new URLSearchParams(location.search)
+  const inviteGameId = params.get('game')
+  const urlToken = params.get('token')
+
+  // Личная ссылка для возврата: ?game=<id>&token=<token>. Реконнектимся по ним
+  // (приоритет над сохранёнными — это явный заход по своей ссылке), сохраняем
+  // креды и убираем token из адресной строки (FRONTEND_SPEC #30). Иначе —
+  // авто-подключение по сохранённым кредам, минуя Connect (#24c).
   const saved = loadCredentials()
-  if (saved !== null) startSession(saved)
+  if (inviteGameId !== null && urlToken !== null) {
+    const creds = { gameId: inviteGameId, token: urlToken }
+    saveCredentials(creds)
+    stripTokenFromUrl()
+    startSession(creds)
+  } else if (saved !== null) {
+    startSession(saved)
+  }
 </script>
 
 {#if client === null}
   <Connect onConnect={startSession} {inviteGameId} />
 {:else}
-  <Game onAction={handleAction} onNewGame={handleNewGame} />
+  <Game
+    onAction={handleAction}
+    onNewGame={handleNewGame}
+    gameId={activeCreds?.gameId ?? null}
+    token={activeCreds?.token ?? null}
+  />
 {/if}
