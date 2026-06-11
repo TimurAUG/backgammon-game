@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
+import { resetNotifications } from './stores/notifications.svelte'
 import { WSClient, type WSConnectionCtor } from './transport/ws'
 import { MockWebSocket } from '../tests/mockWebSocket'
 import { stateFixture } from '../tests/fixtures'
@@ -19,6 +20,7 @@ beforeEach(() => {
   localStorage.clear()
   resetGameState()
   resetConnectionState()
+  resetNotifications()
   MockWebSocket.reset()
   window.history.replaceState(null, '', '/')
 })
@@ -213,6 +215,35 @@ describe('App UNAUTHORIZED (#25)', () => {
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
     expect(ws.readyState).toBe(MockWebSocket.CLOSED)
+  })
+})
+
+describe('App opponent-joined notification (#34a)', () => {
+  test('App_opponentJoined_showsToast', async () => {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+
+    ws.receive({ type: 'OPPONENT_JOINED' })
+
+    expect(await screen.findByText('Соперник присоединился')).toBeInTheDocument()
+  })
+
+  test('App_newGame_clearsNotifications', async () => {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+    ws.receive({ type: 'OPPONENT_JOINED' })
+    await screen.findByText('Соперник присоединился')
+
+    ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
+    await fireEvent.click(await screen.findByTestId('action-new-game'))
+
+    expect(screen.queryByText('Соперник присоединился')).toBeNull()
   })
 })
 

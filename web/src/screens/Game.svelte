@@ -4,8 +4,10 @@
   import Dice from '../components/Dice.svelte'
   import GameOver from '../components/GameOver.svelte'
   import type { ClientMessage } from '../protocol/messages'
+  import { playRollCue } from '../lib/sound'
   import { connection } from '../stores/connection.svelte'
   import { gameState } from '../stores/game.svelte'
+  import { pushNotification } from '../stores/notifications.svelte'
 
   interface Props {
     onAction: (msg: ClientMessage) => void
@@ -42,6 +44,36 @@
       gameState.isFirstMove.white &&
       gameState.isFirstMove.black,
   )
+
+  // «Ожидается мой бросок»: на обычном ходу — только в свою очередь, на стадии
+  // розыгрыша первого хода (rolledForFirst=false) — всегда, т.к. бросают оба.
+  // started отсекает initial-снапшот между JOINED и первым STATE (#34b).
+  const awaitingMyRoll = $derived(
+    gameState.started &&
+      gameState.myColor !== null &&
+      gameState.status === 'waitingForRoll' &&
+      (rolledForFirst ? gameState.turn === gameState.myColor : true),
+  )
+
+  // Детектор перехода false→true: показываем тост «Твой бросок» и проигрываем
+  // сигнал. $effect (не $derived) — потому что это императивная побочка (звук)
+  // плюс сравнение с предыдущим значением. Первый прогон лишь фиксирует базу,
+  // чтобы не звякнуть на самом маунте компонента.
+  let prevAwaitingRoll = false
+  let rollCueReady = false
+  $effect(() => {
+    const awaiting = awaitingMyRoll
+    if (!rollCueReady) {
+      rollCueReady = true
+      prevAwaitingRoll = awaiting
+      return
+    }
+    if (awaiting && !prevAwaitingRoll) {
+      pushNotification('yourRoll', 'Твой бросок')
+      playRollCue()
+    }
+    prevAwaitingRoll = awaiting
+  })
 
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })

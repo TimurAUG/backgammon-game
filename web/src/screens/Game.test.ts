@@ -2,17 +2,24 @@
 // GameOver, всё из gameState; действия наружу через onAction/onNewGame.
 
 import { fireEvent, render, screen } from '@testing-library/svelte'
+import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { resetConnectionState, setConnectionState } from '../stores/connection.svelte'
 import { applyServerMessage, resetGameState } from '../stores/game.svelte'
+import { notifications, resetNotifications } from '../stores/notifications.svelte'
+import { playRollCue } from '../lib/sound'
 import { stateFixture } from '../../tests/fixtures'
 
 import Game from './Game.svelte'
 
+vi.mock('../lib/sound', () => ({ playRollCue: vi.fn() }))
+
 beforeEach(() => {
   resetGameState()
   resetConnectionState()
+  resetNotifications()
+  vi.clearAllMocks()
 })
 
 const noop = { onAction: vi.fn(), onNewGame: vi.fn() }
@@ -202,5 +209,72 @@ describe('Game reconnect blocking (#26d)', () => {
     render(Game, { props: noop })
 
     expect(screen.getByTestId('action-resign')).toBeEnabled()
+  })
+})
+
+describe('Game your-roll cue (#34b)', () => {
+  const moveState = (turn: 'white' | 'black') =>
+    stateFixture({
+      status: 'waitingForMove',
+      turn,
+      isFirstMove: { white: false, black: false },
+      dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
+    })
+
+  const rollState = (turn: 'white' | 'black') =>
+    stateFixture({
+      status: 'waitingForRoll',
+      turn,
+      isFirstMove: { white: false, black: false },
+    })
+
+  test('Game_becomesMyRoll_pushesYourRollToastAndPlaysSound', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(moveState('black')) // ход соперника — не мой бросок
+    render(Game, { props: noop })
+    expect(playRollCue).not.toHaveBeenCalled()
+
+    applyServerMessage(rollState('white')) // соперник передал ход → мой бросок
+    flushSync()
+
+    expect(notifications.items.some((n) => n.text === 'Твой бросок')).toBe(true)
+    expect(playRollCue).toHaveBeenCalledOnce()
+  })
+
+  test('Game_opponentRoll_doesNotNotify', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(moveState('white')) // мой ход двигать
+    render(Game, { props: noop })
+
+    applyServerMessage(rollState('black')) // я завершил → бросает соперник
+    flushSync()
+
+    expect(playRollCue).not.toHaveBeenCalled()
+    expect(notifications.items).toHaveLength(0)
+  })
+
+  test('Game_firstRollStage_notifiesEvenIfNotMyTurn', () => {
+    render(Game, { props: noop }) // монтируем до данных: started=false
+    applyServerMessage({ type: 'JOINED', color: 'black' })
+    // стадия розыгрыша: оба ещё не ходили, firstRoll нет, turn=white (не мой) —
+    // бросают оба, поэтому «Твой бросок» уместен и чёрным тоже.
+    applyServerMessage(stateFixture({ status: 'waitingForRoll', turn: 'white' }))
+    flushSync()
+
+    expect(notifications.items.some((n) => n.text === 'Твой бросок')).toBe(true)
+    expect(playRollCue).toHaveBeenCalledOnce()
+  })
+
+  test('Game_sameMyRollStateTwice_notifiesOnce', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(moveState('black'))
+    render(Game, { props: noop })
+
+    applyServerMessage(rollState('white'))
+    flushSync()
+    applyServerMessage(rollState('white')) // повтор — нового перехода нет
+    flushSync()
+
+    expect(playRollCue).toHaveBeenCalledOnce()
   })
 })

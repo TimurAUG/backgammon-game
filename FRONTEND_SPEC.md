@@ -174,6 +174,17 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 25. `UNAUTHORIZED` чистит localStorage и роутит в Connect.
 26. `connectionStore.reconnecting` блокирует ActionBar.
 
+### Этап 11 — уведомления о событиях
+
+Тосты-уведомления (стек, авто-скрытие, `aria-live`) на ключевые события. Звук — только «Твой бросок» (синтез через Web Audio, без бинарных ассетов в репо).
+
+31. `stores/notifications.svelte.ts`: модульный `$state` со списком тостов + `pushNotification`/`dismissNotification`/`resetNotifications` (по образцу `connection`).
+32. `lib/sound.ts`: `playRollCue()` — короткий сигнал через Web Audio; конструктор `AudioContext` инжектируется, без поддержки/при ошибке — no-op.
+33. `components/Toast.svelte` + `Notifications.svelte`: рендер тостов из стора, `role="status"`/`aria-live`, ручное закрытие, авто-скрытие по таймеру.
+34. Проводка событий:
+    - a. `OPPONENT_JOINED` → тост «Соперник присоединился» (в `App`, рядом с маршрутизацией сообщений; `resetNotifications` в `endSession`).
+    - b. Переход «ожидается мой бросок» (`status == waitingForRoll` и мой ход на обычном ходу, либо стадия розыгрыша первого хода) → тост «Твой бросок» + `playRollCue()` (в `Game`, через `$effect`-детектор перехода `false→true`).
+
 ## 8. Прогресс
 
 Раздел заполняется по ходу работы. Маркируем закрытые этапы галочкой.
@@ -189,6 +200,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 8 — Connect и реконнект (`Connect.svelte` форма+localStorage; `App.svelte` — маршрутизация Connect↔Game, проводка WSClient, авто-подключение из localStorage, `ERROR{UNAUTHORIZED}` → чистка кредов и возврат в Connect; стор `connection.svelte.ts` + `WSClient.onStateChange` (connecting/connected/reconnecting) + `ActionBar.disabled` → `reconnecting` блокирует ActionBar; весь набор — 137 тестов).
 - ✅ Этап 9 — invite-флоу (`lib/api.ts` createGame/joinGame; `Connect` «Создать игру» + ссылка-приглашение `?game=<id>` + вход по приглашению; `App` читает `?game=` из URL; Vite-прокси `/api`; ручной ввод — видимый фоллбэк. Бэкенд: SPEC #38–#41. Плюс session-добавка #27 — кнопка «Сменить игру». 147 тестов фронта).
 - ✅ Этап 10 — личная ссылка для возврата (`App.svelte` читает `?game=<id>&token=<token>` → реконнект с приоритетом над сохранёнными кредами, сохраняет в localStorage и вычищает `token` из адресной строки через `history.replaceState`; `Game.svelte` показывает игроку его reconnect-ссылку с кнопкой копирования). Решает возврат в игру с другого устройства/браузера, где localStorage пуст. 167 тестов фронта.
+- ✅ Этап 11 — уведомления о событиях (`stores/notifications.svelte.ts` — стек тостов push/dismiss/reset, push возвращает id; `lib/sound.ts` — `playRollCue()` коротким тоном через Web Audio с DI-конструктором, no-op без поддержки/при ошибке; `components/Toast.svelte` + `Notifications.svelte` — тосты с `role=status`/`aria-live`, ручным закрытием и авто-скрытием по таймеру, фиксированный оверлей в App; проводка: `App` ловит `OPPONENT_JOINED` → «Соперник присоединился», `Game` через `$effect`-детектор перехода «ожидается мой бросок» → «Твой бросок» + звук — и на обычном ходу, и на розыгрыше первого хода; флаг `started` в gameStore отсекает initial-снапшот между JOINED и первым STATE, чтобы не было ложного звона при возврате в игру). 189 тестов фронта (+22).
 
 ## 9. Открытые вопросы
 

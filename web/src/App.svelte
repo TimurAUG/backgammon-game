@@ -1,10 +1,12 @@
 <script lang="ts">
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
+  import Notifications from './components/Notifications.svelte'
   import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
   import { applyServerMessage, resetGameState } from './stores/game.svelte'
+  import { pushNotification, resetNotifications } from './stores/notifications.svelte'
   import { WSClient } from './transport/ws'
 
   // createClient инжектируется в тестах (WSClient поверх MockWebSocket).
@@ -40,11 +42,15 @@
   }
 
   // Входящие: UNAUTHORIZED означает невалидный токен — завершаем сессию
-  // и возвращаемся в Connect (FRONTEND_SPEC #25); остальное — в gameStore.
+  // и возвращаемся в Connect (FRONTEND_SPEC #25); OPPONENT_JOINED — тост-
+  // уведомление (#34a); остальное — в gameStore.
   function handleMessage(msg: ServerMessage): void {
     if (msg.type === 'ERROR' && msg.code === 'UNAUTHORIZED') {
       endSession()
       return
+    }
+    if (msg.type === 'OPPONENT_JOINED') {
+      pushNotification('opponentJoined', 'Соперник присоединился')
     }
     applyServerMessage(msg)
   }
@@ -58,6 +64,7 @@
     clearCredentials()
     resetGameState()
     resetConnectionState()
+    resetNotifications()
   }
 
   function handleNewGame(): void {
@@ -102,3 +109,5 @@
     token={activeCreds?.token ?? null}
   />
 {/if}
+
+<Notifications />

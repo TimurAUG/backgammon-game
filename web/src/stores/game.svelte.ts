@@ -18,6 +18,9 @@ export interface GameStoreState {
   gameOver: { winner: Color; kind: WinKind } | null
   myColor: Color | null
   firstRoll: { white: number; black: number } | null
+  // true после первого STATE — отличает реальный снапшот от initial-заглушки
+  // (нужно детектору «ожидается мой бросок», см. Game.svelte #34b).
+  started: boolean
 }
 
 function initialGameState(): GameStoreState {
@@ -32,6 +35,7 @@ function initialGameState(): GameStoreState {
     gameOver: null,
     myColor: null,
     firstRoll: null,
+    started: false,
   }
 }
 
@@ -53,6 +57,7 @@ export function applyServerMessage(msg: ServerMessage): void {
       gameState.borneOff = msg.borneOff
       gameState.isFirstMove = msg.isFirstMove
       gameState.dice = msg.dice ?? null
+      gameState.started = true
       break
     case 'LEGAL_MOVES':
       gameState.legalMoves = msg.moves

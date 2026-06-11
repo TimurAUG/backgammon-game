@@ -164,6 +164,40 @@ describe('applyServerMessage ERROR (#10)', () => {
   })
 })
 
+describe('applyServerMessage started flag (#34b)', () => {
+  // started=true только после первого STATE: до него (между JOINED и STATE)
+  // стор хранит initial-снапшот, по которому нельзя судить «ожидается мой
+  // бросок» — иначе ложный звон при возврате в игру в чужой ход.
+  function anyState() {
+    return {
+      type: 'STATE' as const,
+      board: Array(24).fill(0),
+      turn: 'white' as const,
+      status: 'waitingForRoll' as const,
+      borneOff: { white: 0, black: 0 },
+      isFirstMove: { white: true, black: true },
+    }
+  }
+
+  test('gameStore_initial_startedIsFalse', () => {
+    expect(gameState.started).toBe(false)
+  })
+
+  test('gameStore_onSTATE_setsStartedTrue', () => {
+    applyServerMessage(anyState())
+
+    expect(gameState.started).toBe(true)
+  })
+
+  test('gameStore_reset_clearsStarted', () => {
+    applyServerMessage(anyState())
+
+    resetGameState()
+
+    expect(gameState.started).toBe(false)
+  })
+})
+
 describe('applyServerMessage FIRST_ROLL (#2)', () => {
   test('gameStore_onFIRST_ROLL_storesValues', () => {
     applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
