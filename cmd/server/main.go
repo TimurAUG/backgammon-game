@@ -23,6 +23,7 @@ import (
 
 	"github.com/TimurAUG/backgammon-game/internal/game"
 	"github.com/TimurAUG/backgammon-game/internal/transport/rest"
+	"github.com/TimurAUG/backgammon-game/internal/transport/static"
 	"github.com/TimurAUG/backgammon-game/internal/transport/ws"
 )
 
@@ -53,7 +54,7 @@ func main() {
 	// Локально переменная не задана → статику отдаёт Vite-dev, Go только API/WS.
 	// Паттерн "/" наименее специфичен, поэтому /ws и /api/* имеют приоритет.
 	if staticDir := os.Getenv("STATIC_DIR"); staticDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(staticDir)))
+		mux.Handle("/", static.Handler(staticDir))
 		log.Printf("serving static SPA from %s", staticDir)
 	}
 
