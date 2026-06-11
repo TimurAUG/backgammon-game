@@ -241,8 +241,9 @@ func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) protoc
 
 // TestHandler_RollForFirst — оба клиента шлют ROLL_FOR_FIRST. Сервер,
 // получив сигнал от обоих, делает броски через rng в порядке (white, black).
-// При rng [4, 2] → white=5, black=3 → white побеждает, dice=(5, 3).
-// Оба клиента получают STATE с turn=white, status=waitingForMove и Dice.
+// При rng [4, 2] → white=5, black=3 → white побеждает (ходит первым).
+// Оба клиента получают STATE с turn=white, status=waitingForRoll и пустым
+// Dice — значения розыгрыша в ход не переносятся (победитель бросит сам).
 //
 // TDD plan #34 (часть 2).
 func TestHandler_RollForFirst(t *testing.T) {
@@ -275,12 +276,8 @@ func TestHandler_RollForFirst(t *testing.T) {
 	for _, s := range []protocol.ServerMessage{state1, state2} {
 		require.Equal(t, "STATE", s.Type)
 		require.Equal(t, "white", s.Turn)
-		require.Equal(t, "waitingForMove", s.Status)
-		require.NotNil(t, s.Dice)
-		require.Equal(t, uint8(5), s.Dice.A)
-		require.Equal(t, uint8(3), s.Dice.B)
-		require.False(t, s.Dice.IsDouble)
-		require.Equal(t, []int{5, 3}, s.Dice.Remaining)
+		require.Equal(t, "waitingForRoll", s.Status)
+		require.Nil(t, s.Dice, "значения розыгрыша не переносятся в кубики хода")
 	}
 }
 
@@ -322,16 +319,68 @@ func TestHandler_RollForFirst_SendsFirstRollValues(t *testing.T) {
 	require.Equal(t, 3, fr.Black)
 }
 
-// TestHandler_LegalMovesAfterRollForFirst — после определения первого хода
-// победитель (white при rng [4,2]) получает кроме STATE ещё и LEGAL_MOVES
-// со списком одиночных ходов с учётом текущих пипсов.
+// TestHandler_RollForFirst_WinnerRollsAgain — розыгрыш определяет только
+// очередность; его значения в кубики хода НЕ переносятся. После розыгрыша
+// status=waitingForRoll, Dice пуст. Победитель (white при rng[4,2]→5:3)
+// делает обычный ROLL и получает НЕЗАВИСИМЫЙ бросок (rng[0,5]→1:6), а не 5:3.
+//
+// TDD plan #34 (часть 2 — повторный бросок победителя розыгрыша).
+func TestHandler_RollForFirst_WinnerRollsAgain(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2, 0, 5})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1)
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+
+	// STATE после розыгрыша: очередь white, но кубиков ещё нет.
+	st := readMessage(t, ctx, conn1)
+	require.Equal(t, "STATE", st.Type)
+	require.Equal(t, "white", st.Turn)
+	require.Equal(t, "waitingForRoll", st.Status)
+	require.Nil(t, st.Dice, "значения розыгрыша не переносятся в кубики хода")
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+
+	// Победитель бросает на свой ход — независимый бросок 1:6, не 5:3.
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, roll))
+
+	st2 := readMessage(t, ctx, conn1)
+	require.Equal(t, "STATE", st2.Type)
+	require.Equal(t, "white", st2.Turn)
+	require.Equal(t, "waitingForMove", st2.Status)
+	require.NotNil(t, st2.Dice)
+	require.Equal(t, uint8(1), st2.Dice.A)
+	require.Equal(t, uint8(6), st2.Dice.B)
+	require.Equal(t, []int{1, 6}, st2.Dice.Remaining, "кубики хода — из нового броска, не из розыгрыша 5:3")
+}
+
+// TestHandler_LegalMovesAfterRollForFirst — LEGAL_MOVES приходит не после
+// розыгрыша (там waitingForRoll без ходов), а после того, как победитель
+// (white при rng[4,2]) сделает свой ROLL (rng[4,2] → 5:3).
 //
 // initial board, dice (5, 3): белый может только с 24 — 24→19 пипсом 5,
 // 24→21 пипсом 3.
 //
 // TDD plan #34 (часть 3).
 func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
-	rng := bytes.NewReader([]byte{4, 2})
+	rng := bytes.NewReader([]byte{4, 2, 4, 2})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -354,8 +403,17 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
 
-	_ = readMessage(t, ctx, conn1) // STATE после определения первого
-	_ = readMessage(t, ctx, conn2) // STATE после определения первого
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForRoll)
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+	_ = readMessage(t, ctx, conn2) // FIRST_ROLL
+
+	// Победитель (white) бросает на свой ход — rng[4,2] → 5:3.
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, roll))
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForMove)
+	_ = readMessage(t, ctx, conn2) // STATE
 
 	legalMoves := readMessage(t, ctx, conn1)
 	require.Equal(t, "LEGAL_MOVES", legalMoves.Type)
@@ -365,9 +423,10 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 	}, legalMoves.Moves)
 }
 
-// TestHandler_Move_AppliesAndBroadcasts — после ROLL_FOR_FIRST (rng[4,2] →
-// white wins, dice 5:3) белый шлёт MOVE {from:24, to:19}. Сервер вычисляет
-// pip=5, применяет Apply, рассылает STATE обоим, и LEGAL_MOVES только белому.
+// TestHandler_Move_AppliesAndBroadcasts — розыгрыш (rng[4,2] → white wins),
+// затем ROLL белого (rng[4,2] → dice 5:3), затем MOVE {from:24, to:19}.
+// Сервер вычисляет pip=5, применяет Apply, рассылает STATE обоим, и
+// LEGAL_MOVES только белому.
 //
 // Ожидание: после MOVE Board имеет 14 на пункте 24 и 1 на пункте 19;
 // Remaining=[3]; HeadConsumed[White]=1.
@@ -380,7 +439,7 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 //
 // TDD plan #34 (часть 4 — MOVE).
 func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
-	rng := bytes.NewReader([]byte{4, 2})
+	rng := bytes.NewReader([]byte{4, 2, 4, 2})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -402,11 +461,18 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
-	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForRoll)
 	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
 	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
 	_ = readMessage(t, ctx, conn2) // FIRST_ROLL
+
+	// Победитель (white) бросает на свой ход — rng[4,2] → 5:3.
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, roll))
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForMove)
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
 
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
 	require.NoError(t, err)
@@ -435,7 +501,7 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 //
 // TDD plan #34 (часть 5a).
 func TestHandler_EndTurn_RejectsWithPipsLeft(t *testing.T) {
-	rng := bytes.NewReader([]byte{4, 2})
+	rng := bytes.NewReader([]byte{4, 2, 4, 2})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -467,7 +533,7 @@ func TestHandler_EndTurn_RejectsWithPipsLeft(t *testing.T) {
 //
 // TDD plan #34 (часть 5b + 9 — auto-END_TURN).
 func TestHandler_AutoEndTurnOnEmptyLegalMoves(t *testing.T) {
-	rng := bytes.NewReader([]byte{4, 2})
+	rng := bytes.NewReader([]byte{4, 2, 4, 2})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -505,8 +571,8 @@ func TestHandler_AutoEndTurnOnEmptyLegalMoves(t *testing.T) {
 //
 // TDD plan #34 (часть 7 — ROLL).
 func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
-	// 4 байта: 2 на ROLL_FOR_FIRST (white=5,black=3), 2 на ROLL чёрного (2,4).
-	rng := bytes.NewReader([]byte{4, 2, 1, 3})
+	// 6 байт: розыгрыш (white=5,black=3), ROLL белого (5,3), ROLL чёрного (2,4).
+	rng := bytes.NewReader([]byte{4, 2, 4, 2, 1, 3})
 	mgr := game.NewManagerWithRand(rng)
 	srv := httptest.NewServer(ws.NewHandler(mgr))
 	defer srv.Close()
@@ -620,9 +686,10 @@ func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, toke
 	return conn
 }
 
-// playUntilFirstMove подключает двух клиентов, проходит JOIN/ROLL_FOR_FIRST
-// и выполняет первый ход 24→19 пипсом 5. Возвращает соединения готовые к
-// следующему сообщению белого. Соответствует rng[4,2].
+// playUntilFirstMove подключает двух клиентов, проходит JOIN/ROLL_FOR_FIRST,
+// затем победитель (white) делает свой ROLL и первый ход 24→19 пипсом 5.
+// Возвращает соединения готовые к следующему сообщению белого.
+// Соответствует rng[4,2, 4,2]: розыгрыш 5:3 (white wins) + ROLL белого 5:3.
 func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
 	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
@@ -635,11 +702,18 @@ func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*webso
 	require.NoError(t, err)
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
-	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForRoll)
 	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
 	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
 	_ = readMessage(t, ctx, conn2) // FIRST_ROLL
+
+	// Победитель розыгрыша (white) бросает кубики на свой ход.
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, roll))
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForMove)
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
 
 	mv, err := json.Marshal(protocol.ClientMessage{Type: "MOVE", From: 24, To: 19})
 	require.NoError(t, err)
