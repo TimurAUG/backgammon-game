@@ -297,8 +297,10 @@ func (g *Game) EndTurn(c domain.Color) error {
 // Семантика: команда не означает «бросок» сама по себе — это сигнал готовности.
 // Когда оба игрока сигналили, сервер бросает по одному кубику обоим
 // (White первым, Black вторым по rng), при равенстве — переброс до победителя.
-// После определения State.Turn = победитель, State.Dice = NewDice(winner,
-// loser), Status = WaitingForMove. STATE рассылается обоим клиентам.
+// Розыгрыш определяет ТОЛЬКО очередность: State.Turn = победитель, Dice пуст,
+// Status = WaitingForRoll. Значения розыгрыша в ход не переносятся — победитель
+// затем делает обычный ROLL. STATE и FIRST_ROLL рассылаются обоим; LEGAL_MOVES
+// не шлётся (придёт после ROLL победителя).
 //
 // Если c уже сигналил ранее — игнорирует.
 //
@@ -331,18 +333,17 @@ func (g *Game) RollForFirst(c domain.Color) error {
 			continue
 		}
 		firstWhite, firstBlack = whiteVal, blackVal
-		winner, winnerVal, loserVal := domain.White, whiteVal, blackVal
+		winner := domain.White
 		if blackVal > whiteVal {
-			winner, winnerVal, loserVal = domain.Black, blackVal, whiteVal
+			winner = domain.Black
 		}
 		g.State.Turn = winner
-		g.State.Dice = domain.NewDice(winnerVal, loserVal)
-		g.State.Status = domain.StatusWaitingForMove
+		g.State.Dice = domain.Dice{}
+		g.State.Status = domain.StatusWaitingForRoll
 		break
 	}
 
 	g.broadcastStateLocked()
-	g.sendLegalMovesOrAutoEndTurnLocked(g.State.Turn)
 	g.broadcastFirstRollLocked(firstWhite, firstBlack)
 	return nil
 }
