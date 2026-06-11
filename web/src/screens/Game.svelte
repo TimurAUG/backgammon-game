@@ -30,6 +30,17 @@
   // Первый бросок: кто сколько бросил (#2).
   const firstRoll = $derived(gameState.firstRoll)
 
+  // Плашку первого броска показываем только в окне «розыгрыш прошёл, но
+  // победитель ещё не бросил кубики на ход»: waitingForRoll и оба игрока
+  // ещё не начинали (isFirstMove). После ROLL победителя (waitingForMove) и
+  // после первого END_TURN — скрываем и больше не возвращаем.
+  const showFirstRollBanner = $derived(
+    firstRoll !== null &&
+      gameState.status === 'waitingForRoll' &&
+      gameState.isFirstMove.white &&
+      gameState.isFirstMove.black,
+  )
+
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })
   }
@@ -42,7 +53,7 @@
     </button>
   </header>
 
-  {#if firstRoll}
+  {#if showFirstRollBanner && firstRoll}
     <div class="first-roll" data-testid="first-roll-banner">
       Первый бросок — Белые: <b>{firstRoll.white}</b>, Чёрные: <b>{firstRoll.black}</b>. Первым ходит
       {firstRoll.white > firstRoll.black ? 'Белые' : 'Чёрные'}.
