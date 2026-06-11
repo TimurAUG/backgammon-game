@@ -114,6 +114,12 @@
     </button>
   </header>
 
+  {#if blocked}
+    <div class="reconnecting" role="status" aria-live="polite" data-testid="reconnecting-banner">
+      Переподключение…
+    </div>
+  {/if}
+
   {#if showFirstRollBanner && firstRoll}
     <div class="first-roll" data-testid="first-roll-banner">
       Первый бросок — Белые: <b>{firstRoll.white}</b>, Чёрные: <b>{firstRoll.black}</b>. Первым ходит
@@ -216,6 +222,16 @@
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
     font-size: 14px;
+    color: #2a1e10;
+    text-align: center;
+  }
+  .reconnecting {
+    background: #e7c79b;
+    border: 1px solid #5a3a1e;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 14px;
+    font-weight: 600;
     color: #2a1e10;
     text-align: center;
   }

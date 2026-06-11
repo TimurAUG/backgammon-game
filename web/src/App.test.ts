@@ -183,6 +183,34 @@ describe('App reconnect link (#30)', () => {
   })
 })
 
+describe('App public invite vs saved creds (fix)', () => {
+  // Публичное приглашение ?game=<id> (без token): нельзя авто-подключаться по
+  // сохранённым кредам ДРУГОЙ игры — иначе игрок уходит не в ту игру (или в
+  // одном браузере занимает чужой слот, став дублем создателя). Должны показать
+  // join-invite, чтобы получить собственный токен.
+  test('App_publicInvite_staleCredsForOtherGame_showsJoinInviteAndDoesNotConnect', () => {
+    saveCredentials({ gameId: 'g-other', token: 'tok-other' })
+    window.history.replaceState(null, '', '/?game=g-new')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  // Приглашение в СВОЮ сохранённую игру (saved.gameId == invite) — это возврат
+  // (F5/повторный заход по ссылке): авто-реконнект по saved сохраняется.
+  test('App_publicInvite_ownSavedGame_autoReconnects', () => {
+    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
+    window.history.replaceState(null, '', '/?game=g-1')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    expect(MockWebSocket.instances).toHaveLength(1)
+  })
+})
+
 describe('App UNAUTHORIZED (#25)', () => {
   async function connectAndOpen(): Promise<MockWebSocket> {
     render(App, { props: { createClient: testCreateClient } })

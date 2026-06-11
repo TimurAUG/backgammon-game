@@ -220,6 +220,7 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 - ✅ Этап 10 (#31–#32): оркестрация (`GameState`, `Apply` обновляет `Remaining` через `Dice.Use`, `IsTurnComplete` через `CanUsePip`)
 - ✅ Этап 11 (#33–#37): транспорт и сессии. #33 JOIN, #34 полный поток ROLL_FOR_FIRST/ROLL/MOVE/LEGAL_MOVES/END_TURN/GAME_OVER/auto-END_TURN, #35 реконнект через token, #36 Postgres persistence (Storage интерфейс + PostgresStorage с JSONB + auto-save), #37 auth — Bearer-токен в Authorization-header WS-handshake (401 без upgrade при отсутствии).
 - ✅ Этап 12 (#38–#41): REST invite-флоу — `generateID` (crypto/rand→hex), `Manager.CreateGame`/`JoinByID` (сервер генерит gameId/token и резервирует слоты; `ErrGameNotFound`/`ErrRoomFull`), хендлер `internal/transport/rest` (`POST /api/games`, `POST /api/games/{id}/join` → 404/409), проводка в `main.go`. WS-JOIN подхватывает зарезервированный токен (attachLocked по совпадению).
+- ✅ Этап 13 (#42–#44): бесшовный рестарт. #42 in-memory реестр активных игр в `Manager` (`active map[id]*Game` под mu; JOIN переиспользует live-объект → общие conns; broadcast доходит обоим и при PostgresStorage — закрыт баг разъезда копий); #43 выгрузка партии при отключении обоих (`Manager.Leave`, `Detach`→bothDisconnected, `ActiveCount` для инспекции; handler зовёт Leave); #44 `LEGAL_MOVES` при (ре)коннекте на своём ходу (`LegalMovesMessageFor`, досылка через локальный conn). Инфра: `docker-compose.yml` (app+postgres+volume), DEPLOY обновлён, переносимость через `DATABASE_URL`. Фронт: плашка «Переподключение…» при `connection==reconnecting`.
 
 **Бонусы вне плана:** `cmd/server` (точка входа с выбором Storage по DATABASE_URL); LegalMoves DFS-lookahead (фильтрация ходов, ведущих к неизбежному блоку 6); `static.Handler` — раздача SPA с Cache-Control (no-cache для index.html, immutable для хешированных ассетов).
 
@@ -281,6 +282,17 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 35. Реконнект.
 36. Persistence через Postgres.
 37. Аутентификация.
+
+### Этап 13 — бесшовный рестарт (реестр активных игр поверх persistence)
+
+Persistence (#36) сохраняет состояние, но `LoadGame` отдаёт **новый** объект на каждый JOIN — с PostgresStorage два игрока перестают делить `conns`, и broadcast рвётся (соперник не видит ходов). Чтобы партия пережила рестарт без переоткрытия вкладки, нужен in-memory реестр активных партий поверх Storage.
+
+42. `Manager` держит реестр активных игр (`map[id]*Game`): JOIN переиспользует активный объект (общие `conns`), иначе грузит из Storage / создаёт. Broadcast доходит обоим игрокам и при PostgresStorage.
+43. Выгрузка партии из реестра при отключении обоих игроков (`Manager.Leave`); состояние остаётся в Storage, повторный JOIN перезагружает.
+44. `LEGAL_MOVES` при (ре)коннекте на своём ходу (`waitingForMove`) — инвариант протокола; иначе после рестарта игрок на своём ходу не видит легальных ходов.
+
+Инфра (glue, без TDD): `docker-compose.yml` (app + postgres + volume через `DATABASE_URL`); переносимость на managed-Postgres — сменой `DATABASE_URL`.
+Фронт (FRONTEND_SPEC): индикатор «Переподключение…» при `connection == reconnecting`.
 
 ---
 

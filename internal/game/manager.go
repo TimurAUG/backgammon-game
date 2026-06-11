@@ -103,11 +103,13 @@ func (g *Game) Opponent(c domain.Color) Conn {
 	return g.conns[domain.White]
 }
 
-// Detach снимает регистрацию соединения цвета c. Идемпотентно.
-func (g *Game) Detach(c domain.Color) {
+// Detach снимает регистрацию соединения цвета c и сообщает, отключены ли
+// теперь оба игрока (тогда Manager выгрузит партию из реестра). Идемпотентно.
+func (g *Game) Detach(c domain.Color) (bothDisconnected bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.conns[c] = nil
+	return g.conns[domain.White] == nil && g.conns[domain.Black] == nil
 }
 
 // HandleMove обрабатывает MOVE от игрока цвета c. Вычисляет pip по From/To
@@ -472,6 +474,25 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 	return msg
 }
 
+// LegalMovesMessageFor возвращает LEGAL_MOVES-сообщение для игрока color, если
+// сейчас его ход в фазе waitingForMove — для досылки при (ре)коннекте, чтобы
+// клиент сразу видел доступные ходы (инвариант протокола; критично после
+// рестарта сервера). Иначе nil. Сообщение отправляет вызывающий (handler)
+// через своё соединение, поэтому метод не трогает g.conns.
+func (g *Game) LegalMovesMessageFor(color domain.Color) *protocol.ServerMessage {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.State.Status != domain.StatusWaitingForMove || g.State.Turn != color {
+		return nil
+	}
+	moves := domain.LegalMoves(g.State)
+	payload := make([]protocol.MovePayload, len(moves))
+	for i, mv := range moves {
+		payload[i] = protocol.MovePayload{From: uint8(mv.From), To: uint8(mv.To), Pip: mv.Pip}
+	}
+	return &protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload}
+}
+
 func colorString(c domain.Color) string {
 	if c == domain.Black {
 		return "black"
@@ -492,29 +513,38 @@ func statusString(s domain.GameStatus) string {
 
 // Manager хранит активные игры через Storage и генерирует броски кубиков
 // через rng. Безопасен для одновременного доступа из горутин WS-handler'а.
+//
+// active — in-memory реестр «живых» партий: один объект Game на активную
+// игру, держащий WS-соединения (conns). Storage переживает рестарт процесса,
+// но LoadGame отдаёт новый объект на каждый вызов — с PostgresStorage два
+// игрока иначе попали бы в разные объекты, и broadcast не дошёл бы до
+// соперника. Реестр гарантирует общий объект, пока партия активна.
 type Manager struct {
 	storage Storage
 	rng     io.Reader
 	ids     io.Reader // источник для gameID/token (crypto/rand; фикс-reader в тестах)
+
+	mu     sync.Mutex
+	active map[string]*Game
 }
 
 // NewManager создаёт менеджер с in-memory Storage и crypto/rand в качестве
 // источника случайности.
 func NewManager() *Manager {
-	return &Manager{storage: NewMemoryStorage(), rng: crand.Reader, ids: crand.Reader}
+	return &Manager{storage: NewMemoryStorage(), rng: crand.Reader, ids: crand.Reader, active: map[string]*Game{}}
 }
 
 // NewManagerWithRand — конструктор для тестов с фиксированным rng
 // (bytes.Reader с заранее подготовленными байтами). Использует in-memory
 // Storage.
 func NewManagerWithRand(rng io.Reader) *Manager {
-	return &Manager{storage: NewMemoryStorage(), rng: rng, ids: crand.Reader}
+	return &Manager{storage: NewMemoryStorage(), rng: rng, ids: crand.Reader, active: map[string]*Game{}}
 }
 
 // NewManagerWithStorage позволяет подключить произвольный Storage —
 // например, Postgres (#36). Источник случайности задаётся отдельно.
 func NewManagerWithStorage(storage Storage, rng io.Reader) *Manager {
-	return &Manager{storage: storage, rng: rng, ids: crand.Reader}
+	return &Manager{storage: storage, rng: rng, ids: crand.Reader, active: map[string]*Game{}}
 }
 
 // CreateGame генерит новую игру: случайные gameID (8 байт) и creator-token
@@ -601,20 +631,32 @@ func (m *Manager) JoinByID(gameID string) (string, error) {
 // При token == "" реконнект невозможен (на сервере нет способа отличить
 // одного клиента от другого).
 func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, error) {
-	g, ok := m.storage.LoadGame(id)
+	// Берём live-объект из реестра, если партия уже активна (общие conns).
+	// Иначе поднимаем из Storage (восстановление после рестарта) или создаём
+	// новую и регистрируем. Создание/поиск — под m.mu, чтобы два одновременных
+	// JOIN новой игры не создали два объекта.
+	m.mu.Lock()
+	g, ok := m.active[id]
 	if !ok {
-		g = &Game{
-			ID: id,
-			State: domain.GameState{
-				Board:       domain.InitialBoard(),
-				Turn:        domain.White,
-				Status:      domain.StatusWaitingForRoll,
-				IsFirstMove: [2]bool{true, true},
-			},
+		loaded, found := m.storage.LoadGame(id)
+		if found {
+			g = loaded
+		} else {
+			g = &Game{
+				ID: id,
+				State: domain.GameState{
+					Board:       domain.InitialBoard(),
+					Turn:        domain.White,
+					Status:      domain.StatusWaitingForRoll,
+					IsFirstMove: [2]bool{true, true},
+				},
+			}
 		}
+		g.rng = m.rng
+		g.storage = m.storage
+		m.active[id] = g
 	}
-	g.rng = m.rng
-	g.storage = m.storage
+	m.mu.Unlock()
 
 	g.mu.Lock()
 	color, err := g.attachLocked(token, conn)
@@ -625,6 +667,30 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 
 	_ = m.storage.SaveGame(g)
 	return color, g, nil
+}
+
+// Leave отсоединяет игрока цвета color от партии id и, если отключились оба,
+// выгружает её из реестра активных игр — память не растёт по числу когда-либо
+// открытых партий. Состояние уже персистится в Storage после каждого
+// действия, поэтому повторный JOIN поднимет игру заново. Идемпотентно.
+func (m *Manager) Leave(id string, color domain.Color) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.active[id]
+	if !ok {
+		return
+	}
+	if g.Detach(color) {
+		delete(m.active, id)
+	}
+}
+
+// ActiveCount возвращает число партий в in-memory реестре. Для инспекции
+// (тесты жизненного цикла реестра).
+func (m *Manager) ActiveCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.active)
 }
 
 // attachLocked регистрирует conn в свободном слоте или реконнектит в слот с

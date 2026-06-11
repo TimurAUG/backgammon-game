@@ -93,13 +93,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = pc.Send(protocol.ServerMessage{Type: "ERROR", Code: code, Message: err.Error()})
 		return
 	}
-	defer g.Detach(color)
+	// При разрыве — отсоединяемся через менеджер: он выгрузит партию из реестра,
+	// когда уйдут оба игрока (#43). Состояние остаётся в Storage.
+	defer h.mgr.Leave(msg.GameID, color)
 
 	if err := pc.Send(game.JoinedMessage(color)); err != nil {
 		return
 	}
 	if err := pc.Send(game.StateMessage(g.State)); err != nil {
 		return
+	}
+	// Инвариант протокола: при (ре)коннекте на своём ходу клиент сразу получает
+	// LEGAL_MOVES — иначе после рестарта сервера не сможет ходить (#44).
+	if lm := g.LegalMovesMessageFor(color); lm != nil {
+		if err := pc.Send(*lm); err != nil {
+			return
+		}
 	}
 	if opp := g.Opponent(color); opp != nil {
 		_ = opp.Send(protocol.ServerMessage{Type: "OPPONENT_JOINED"})

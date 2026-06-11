@@ -1,0 +1,44 @@
+# Self-host с персистентностью: Postgres (на named volume) + приложение.
+# Игры переживают пересборку/рестарт приложения — состояние в БД, не в памяти.
+#
+# Запуск:        docker compose up -d --build
+# Обновить код:  docker compose up -d --build app   # db с данными не трогается
+# Логи:          docker compose logs -f app
+#
+# Переносимость: код привязан к БД только через DATABASE_URL. Чтобы переехать на
+# managed-Postgres (Neon/Supabase/Railway/RDS/…), не поднимай сервис db — задай
+# внешний DATABASE_URL и запускай только app (docker run или compose override).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nardy
+      POSTGRES_PASSWORD: nardy
+      POSTGRES_DB: nardy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nardy -d nardy']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Имя хоста БД = имя сервиса compose (db). Схему сервер создаёт сам
+      # при старте (InitSchema).
+      DATABASE_URL: postgres://nardy:nardy@db:5432/nardy?sslmode=disable
+      # Обязателен за туннелем/реверс-прокси (Host ≠ Origin), иначе WS → 403.
+      ALLOWED_ORIGINS: '*'
+    ports:
+      - '8080:8080'
+    restart: unless-stopped
+
+volumes:
+  pgdata:

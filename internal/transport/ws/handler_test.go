@@ -662,6 +662,67 @@ func TestHandler_Reconnect(t *testing.T) {
 		"новый white-conn (после реконнекта) должен получить OPPONENT_JOINED при входе black")
 }
 
+// TestHandler_Reconnect_SendsLegalMovesOnOwnTurn — инвариант протокола:
+// при реконнекте на своём ходу (waitingForMove) клиент после STATE должен
+// получить LEGAL_MOVES — иначе после рестарта сервера игрок на своём ходу не
+// увидит легальных ходов и не сможет двигать шашки.
+//
+// rng [4,2,4,2]: розыгрыш 5:3 (white wins) + ROLL белого 5:3 → waitingForMove,
+// ходы 24→19 (пип 5) и 24→21 (пип 3). White рвёт соединение и реконнектится
+// тем же токеном.
+//
+// TDD plan #44.
+func TestHandler_Reconnect_SendsLegalMovesOnOwnTurn(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2, 4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	_ = readMessage(t, ctx, conn1) // STATE при JOIN
+	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForRoll)
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+	_ = readMessage(t, ctx, conn2)
+
+	roll, err := json.Marshal(protocol.ClientMessage{Type: "ROLL"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, roll))
+	_ = readMessage(t, ctx, conn1) // STATE (waitingForMove)
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
+
+	// White обрывается и реконнектится тем же токеном — его ход в самом разгаре.
+	conn1.Close(websocket.StatusNormalClosure, "reconnect")
+	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
+
+	st := readMessage(t, ctx, conn1b)
+	require.Equal(t, "STATE", st.Type, "после реконнекта приходит STATE")
+	require.Equal(t, "waitingForMove", st.Status)
+
+	legal := readMessage(t, ctx, conn1b)
+	require.Equal(t, "LEGAL_MOVES", legal.Type,
+		"реконнект на своём ходу должен получить LEGAL_MOVES")
+	require.ElementsMatch(t, []protocol.MovePayload{
+		{From: 24, To: 19, Pip: 5},
+		{From: 24, To: 21, Pip: 3},
+	}, legal.Moves)
+}
+
 // dialAndJoinWithToken подключается с явно заданным токеном в
 // Authorization: Bearer-заголовке. JOIN-сообщение токен не несёт
 // (по SPEC #37 заголовок — основной путь для не-браузерных клиентов).

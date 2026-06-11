@@ -212,6 +212,26 @@ describe('Game reconnect blocking (#26d)', () => {
   })
 })
 
+describe('Game reconnecting banner (persistence)', () => {
+  test('Game_reconnecting_showsBanner', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    setConnectionState('reconnecting')
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('reconnecting-banner')).toHaveTextContent('Переподключение…')
+  })
+
+  test('Game_connected_noBanner', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    setConnectionState('connected')
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('reconnecting-banner')).toBeNull()
+  })
+})
+
 describe('Game your-roll cue (#34b)', () => {
   const moveState = (turn: 'white' | 'black') =>
     stateFixture({

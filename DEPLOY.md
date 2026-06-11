@@ -70,17 +70,45 @@ fly deploy                       # билдит Dockerfile и катит
 
 `fly launch` тоже подойдёт — он сам сгенерит `fly.toml` и обнаружит `Dockerfile`.
 
-## Хранилище
+## Хранилище и персистентность
 
 По умолчанию **in-memory** — `DATABASE_URL` не задан, партии живут в памяти и
-теряются при рестарте машины. Для персистентности:
+теряются при рестарте процесса. Чтобы игры переживали рестарт/пересборку, задай
+`DATABASE_URL` (Postgres) — сервер сам поднимет схему при старте (`InitSchema`).
+Код привязан к БД **только** через эту переменную, поэтому хранилище переносимо
+между хостингами без изменения кода.
+
+### Self-host с персистентностью (docker-compose)
+
+`docker-compose.yml` поднимает Postgres (на named volume `pgdata`) + приложение:
+
+```sh
+docker compose up -d --build          # первый запуск
+docker compose up -d --build app      # обновить код; БД с данными не трогается
+docker compose logs -f app
+```
+
+Игроки переживают пересборку приложения: состояние — в БД, клиент сам
+переподключится (короткое «Переподключение…», партия на месте). За туннель —
+тот же `ngrok http 8080` (см. выше).
+
+### Managed Postgres (Neon / Supabase / Railway / RDS / Fly)
+
+Не поднимай локальный Postgres — задай внешний `DATABASE_URL` и запускай только
+приложение:
+
+```sh
+docker run -d -p 8080:8080 \
+  -e DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=require' \
+  -e ALLOWED_ORIGINS='*' nardy
+```
+
+На Fly — managed-база в один шаг:
 
 ```sh
 fly postgres create
 fly postgres attach <pg-app>     # выставит секрет DATABASE_URL
 ```
-
-Сервер сам поднимет схему при старте (`InitSchema`).
 
 ## Заметки
 
