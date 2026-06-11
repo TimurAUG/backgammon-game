@@ -93,12 +93,44 @@ describe('Game action wiring (#24a)', () => {
 describe('Game first-roll banner (#2)', () => {
   test('Game_firstRoll_showsWhoRolledWhat', () => {
     applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
-    applyServerMessage(stateFixture({ status: 'waitingForMove', turn: 'white' }))
+    applyServerMessage(stateFixture()) // waitingForRoll — окно до броска победителя
     render(Game, { props: noop })
 
     const banner = screen.getByTestId('first-roll-banner')
     expect(banner).toHaveTextContent('5')
     expect(banner).toHaveTextContent('3')
+  })
+
+  test('Game_afterWinnerRolls_hidesBanner', () => {
+    // Победитель бросил кубики на ход (waitingForMove, кубики на столе) —
+    // плашка первого броска больше не нужна.
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 4, black: 6 } })
+    applyServerMessage(
+      stateFixture({
+        status: 'waitingForMove',
+        turn: 'black',
+        dice: { a: 6, b: 4, isDouble: false, remaining: [6, 4] },
+      }),
+    )
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('first-roll-banner')).toBeNull()
+  })
+
+  test('Game_afterFirstEndTurn_keepsBannerHidden', () => {
+    // Первый игрок (black) завершил ход → очередь white бросать
+    // (waitingForRoll), isFirstMove[black]=false. Плашка не возвращается.
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 4, black: 6 } })
+    applyServerMessage(
+      stateFixture({
+        status: 'waitingForRoll',
+        turn: 'white',
+        isFirstMove: { white: true, black: false },
+      }),
+    )
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('first-roll-banner')).toBeNull()
   })
 
   test('Game_noFirstRoll_noBanner', () => {
