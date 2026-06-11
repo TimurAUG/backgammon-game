@@ -170,6 +170,21 @@ describe('Game switch-game (#27)', () => {
   })
 })
 
+describe('Game reconnect link (#30)', () => {
+  // Личная ссылка для возврата в игру (в т.ч. с другого устройства):
+  // содержит и gameId, и token.
+  test('Game_rendersReconnectLinkWithGameIdAndToken', () => {
+    applyServerMessage(stateFixture())
+    render(Game, {
+      props: { onAction: vi.fn(), onNewGame: vi.fn(), gameId: 'g-42', token: 'tok-42' },
+    })
+
+    const link = screen.getByTestId('reconnect-link') as HTMLInputElement
+    expect(link.value).toContain('?game=g-42')
+    expect(link.value).toContain('token=tok-42')
+  })
+})
+
 describe('Game reconnect blocking (#26d)', () => {
   test('Game_reconnecting_disablesActionBar', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })

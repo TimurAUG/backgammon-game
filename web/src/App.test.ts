@@ -146,6 +146,41 @@ describe('App auto-connect (#24c)', () => {
   })
 })
 
+describe('App reconnect link (#30)', () => {
+  test('App_gameAndTokenInUrl_autoReconnects', () => {
+    window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    MockWebSocket.last().acceptOpen()
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-url', token: 'tok-url' }),
+    )
+  })
+
+  test('App_gameAndTokenInUrl_savesCredsAndStripsToken', () => {
+    window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(loadCredentials()).toEqual({ gameId: 'g-url', token: 'tok-url' })
+    expect(location.search).not.toContain('token')
+  })
+
+  test('App_urlToken_overridesSavedCreds', () => {
+    saveCredentials({ gameId: 'g-old', token: 'tok-old' })
+    window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
+
+    render(App, { props: { createClient: testCreateClient } })
+
+    MockWebSocket.last().acceptOpen()
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-url', token: 'tok-url' }),
+    )
+  })
+})
+
 describe('App UNAUTHORIZED (#25)', () => {
   async function connectAndOpen(): Promise<MockWebSocket> {
     render(App, { props: { createClient: testCreateClient } })
