@@ -109,6 +109,23 @@ describe('Game first-roll banner (#2)', () => {
   })
 })
 
+describe('Game first-roll winner re-roll (#2)', () => {
+  // После розыгрыша победитель бросает кубики заново: бэк шлёт STATE с
+  // status=waitingForRoll и dice=null (значения розыгрыша не переносятся).
+  // Признак «розыгрыш состоялся» — firstRoll, а не наличие кубиков, поэтому
+  // победитель видит «Бросить кубики» (ROLL), а не снова «Бросить за первый ход».
+  test('Game_afterRollForFirst_winnerSeesRollDice', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+    applyServerMessage(stateFixture()) // waitingForRoll, turn=white, dice=null
+
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('action-roll')).not.toBeNull()
+    expect(screen.queryByTestId('action-roll-for-first')).toBeNull()
+  })
+})
+
 describe('Game switch-game (#27)', () => {
   test('Game_switchGameButton_callsOnNewGame', async () => {
     const onNewGame = vi.fn()
