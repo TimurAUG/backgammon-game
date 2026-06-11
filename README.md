@@ -8,9 +8,9 @@
 
 MVP готов и собирается в один Docker-образ.
 
-- **Backend** — доменное ядро + транспорт (WS/REST/static) + persistence + auth. TDD-план [SPEC.md](SPEC.md) §6 закрыт целиком (пункты #1–#41, включая REST invite-флоу).
-- **Frontend** — все этапы [FRONTEND_SPEC.md](FRONTEND_SPEC.md) §7 закрыты (0–10): доска, кубики, действия, конец игры, Connect, реконнект, invite-флоу, личная ссылка для возврата.
-- **Hosting** — `Dockerfile` (многостадийный), `fly.toml`, инструкции под Fly.io / ngrok / VPS — см. [DEPLOY.md](DEPLOY.md).
+- **Backend** — доменное ядро + транспорт (WS/REST/static) + persistence + auth + бесшовный рестарт. TDD-план [SPEC.md](SPEC.md) §6 закрыт целиком (пункты #1–#44): REST invite-флоу (#38–#41) и реестр активных игр поверх Postgres (#42–#44) — партии переживают рестарт сервера, игроки переподключаются автоматически.
+- **Frontend** — все этапы [FRONTEND_SPEC.md](FRONTEND_SPEC.md) §7 закрыты (0–11): доска, кубики, действия, конец игры, Connect, реконнект, invite-флоу, личная ссылка для возврата, уведомления (соперник присоединился / «Твой бросок» + звук), индикатор «Переподключение…».
+- **Hosting** — один `Dockerfile`; `docker-compose.yml` (app + Postgres на volume) для self-host с персистентностью; инструкции под ngrok / Fly.io / VPS — см. [DEPLOY.md](DEPLOY.md).
 
 Ещё не сделано:
 - Rate limit на REST (см. [SPEC.md](SPEC.md) §8).
@@ -38,7 +38,7 @@ MVP готов и собирается в один Docker-образ.
 ```
 cmd/server/                — точка входа (выбор Storage по DATABASE_URL, проводка ws/rest/static)
 internal/domain/           — чистая игровая логика (доска, кубики, правила, исход); только stdlib
-internal/game/             — оркестратор сессий (Manager, Storage-интерфейс, in-memory + Postgres)
+internal/game/             — оркестратор сессий (Manager с реестром активных игр, Storage-интерфейс: in-memory + Postgres)
 internal/protocol/         — типы WS-сообщений (зеркалятся фронтом)
 internal/transport/ws/     — WS handshake + read-loop, auth, проверка Origin
 internal/transport/rest/   — REST invite-флоу (POST /api/games, /api/games/{id}/join)
@@ -72,9 +72,22 @@ DATABASE_URL=postgres://user:pass@localhost:5432/nardy go run ./cmd/server -addr
 
 ```sh
 docker build -t nardy .
-docker run --rm -p 8080:8080 nardy
+docker run --rm -p 8080:8080 nardy        # in-memory: партии теряются при рестарте
 # открыть http://localhost:8080
 ```
+
+### С персистентностью (docker-compose): app + Postgres
+
+Партии переживают рестарт/пересборку — состояние в БД (на volume `pgdata`), не в памяти; игроки переподключаются автоматически:
+
+```sh
+docker compose up -d --build        # поднять app + Postgres
+docker compose up -d --build app    # обновить код — БД с играми не трогается
+docker compose logs -f app
+docker compose down                 # остановить (том с играми сохраняется)
+```
+
+Переносимость: код привязан к БД только через `DATABASE_URL` — на managed-Postgres (Neon / Supabase / Railway / RDS / Fly) переезжаешь сменой одной переменной, см. [DEPLOY.md](DEPLOY.md).
 
 Переменные окружения:
 
@@ -112,7 +125,7 @@ npm run check && npm run lint   # типы + линт
 
 **Клиент → сервер:** `JOIN`, `ROLL_FOR_FIRST`, `ROLL`, `MOVE`, `END_TURN`, `RESIGN`.
 
-**Сервер → клиент:** `STATE` (полный снапшот), `LEGAL_MOVES`, `OPPONENT_JOINED`, `OPPONENT_LEFT`, `GAME_OVER`, `ERROR`.
+**Сервер → клиент:** `JOINED` (твой цвет), `STATE` (полный снапшот), `LEGAL_MOVES`, `FIRST_ROLL`, `OPPONENT_JOINED`, `OPPONENT_LEFT`, `GAME_OVER`, `ERROR`.
 
 **Коды ошибок (`ERROR.code`):** `UNAUTHORIZED`, `ROOM_FULL`, `NOT_YOUR_TURN`, `INVALID_STATE`, `MUST_USE_PIP`, `RULE_OF_SIX`.
 

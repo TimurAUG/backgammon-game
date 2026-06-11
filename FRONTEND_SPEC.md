@@ -35,25 +35,30 @@ web/
   svelte.config.js
   src/
     main.ts              — bootstrap
-    App.svelte           — root, выбирает Connect или Game по connectionStore
+    App.svelte           — root: роутинг Connect/Game, проводка WSClient, оверлей уведомлений
     protocol/
       messages.ts        — TS-зеркало internal/protocol/messages.go
     transport/
       ws.ts              — WSClient: connect/send/onMessage/реконнект
     stores/
-      game.ts            — board, turn, dice, borneOff, status, isFirstMove, legalMoves, gameOver
-      connection.ts      — state: idle | connecting | connected | reconnecting | error
+      game.svelte.ts          — board/turn/dice/borneOff/status/isFirstMove/legalMoves/gameOver/myColor/firstRoll/started
+      connection.svelte.ts    — state: idle | connecting | connected | reconnecting | error
+      notifications.svelte.ts — стек тостов (соперник присоединился / «Твой бросок»)
     screens/
-      Connect.svelte     — форма ввода gameId + token, persistence в localStorage
-      Game.svelte        — Board + Dice + ActionBar + GameOver overlay
+      Connect.svelte     — создать игру / войти по приглашению / ручной ввод; persistence в localStorage
+      Game.svelte        — Board + Dice + ActionBar + GameOver + баннеры (первый бросок, переподключение)
     components/
-      Board.svelte       — SVG-доска
-      Checker.svelte     — одна шашка
+      Board.svelte       — SVG-доска, шашки и клик-режим ходов
       Dice.svelte        — два кубика + оставшиеся пипсы
       ActionBar.svelte   — контекстные кнопки ROLL_FOR_FIRST/ROLL/END_TURN/RESIGN
       GameOver.svelte    — модалка результата
+      Toast.svelte       — одна плашка уведомления (role=status/aria-live, авто-скрытие)
+      Notifications.svelte — контейнер тостов из стора
     lib/
       geometry.ts        — координаты SVG для пункта i и j-й шашки на пункте
+      credentials.ts     — gameId+token в localStorage
+      api.ts             — REST invite-клиент (createGame/joinGame)
+      sound.ts           — playRollCue() короткий сигнал через Web Audio
   tests/                 — общие тестовые утилиты, mock WebSocket, фикстуры STATE
 ```
 
