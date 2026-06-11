@@ -188,6 +188,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 7 — конец игры (`GameOver.svelte` модалка с локализацией Белые/Чёрные + Оин/Марс/Кокс; «Вы победили»/«Вы проиграли» при наличии myColor; кнопка «Новая игра» → onNewGame; 10 тестов).
 - ✅ Этап 8 — Connect и реконнект (`Connect.svelte` форма+localStorage; `App.svelte` — маршрутизация Connect↔Game, проводка WSClient, авто-подключение из localStorage, `ERROR{UNAUTHORIZED}` → чистка кредов и возврат в Connect; стор `connection.svelte.ts` + `WSClient.onStateChange` (connecting/connected/reconnecting) + `ActionBar.disabled` → `reconnecting` блокирует ActionBar; весь набор — 137 тестов).
 - ✅ Этап 9 — invite-флоу (`lib/api.ts` createGame/joinGame; `Connect` «Создать игру» + ссылка-приглашение `?game=<id>` + вход по приглашению; `App` читает `?game=` из URL; Vite-прокси `/api`; ручной ввод — видимый фоллбэк. Бэкенд: SPEC #38–#41. Плюс session-добавка #27 — кнопка «Сменить игру». 147 тестов фронта).
+- ✅ Этап 10 — личная ссылка для возврата (`App.svelte` читает `?game=<id>&token=<token>` → реконнект с приоритетом над сохранёнными кредами, сохраняет в localStorage и вычищает `token` из адресной строки через `history.replaceState`; `Game.svelte` показывает игроку его reconnect-ссылку с кнопкой копирования). Решает возврат в игру с другого устройства/браузера, где localStorage пуст. 167 тестов фронта.
 
 ## 9. Открытые вопросы
 
