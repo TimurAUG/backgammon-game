@@ -14,10 +14,14 @@
 
   let { onAction, onNewGame }: Props = $props()
 
-  // Первый бросок уже состоялся, если кубики на столе или кто-то
-  // уже завершил свой первый ход (после END_TURN кубики сбрасываются).
+  // Первый бросок уже состоялся, если был FIRST_ROLL, или кубики на столе,
+  // или кто-то уже завершил свой первый ход. После розыгрыша победитель
+  // бросает заново (dice=null до его ROLL) — опираться только на dice нельзя.
   const rolledForFirst = $derived(
-    gameState.dice !== null || !gameState.isFirstMove.white || !gameState.isFirstMove.black,
+    gameState.firstRoll !== null ||
+      gameState.dice !== null ||
+      !gameState.isFirstMove.white ||
+      !gameState.isFirstMove.black,
   )
 
   // Реконнект → ActionBar заблокирован (сокет закрыт, send бы бросил).
