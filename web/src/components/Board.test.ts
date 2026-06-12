@@ -358,3 +358,86 @@ describe('Board drag drop → onMove (#42)', () => {
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
   })
 })
+
+describe('Board drag bear-off (#43)', () => {
+  test('Board_dragCheckerWithBearOff_showsDropZone', async () => {
+    const board = emptyBoard()
+    board[5] = 3 // 3 белых на пункте 6
+    const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    expect(screen.queryByTestId('bear-off-drop')).toBeNull()
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-6-0'))
+
+    expect(screen.getByTestId('bear-off-drop')).toBeInTheDocument()
+  })
+
+  test('Board_dragToBearOffZone_callsOnMoveToZero', async () => {
+    const board = emptyBoard()
+    board[5] = 3
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-6-0'))
+    await fireEvent.pointerUp(screen.getByTestId('bear-off-drop'))
+
+    expect(onMove).toHaveBeenCalledWith(6, 0)
+  })
+
+  test('Board_dragCheckerWithoutBearOff_noDropZone', async () => {
+    const board = emptyBoard()
+    board[23] = 5 // белые на 24, только обычный ход — выкида нет
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+
+    expect(screen.queryByTestId('bear-off-drop')).toBeNull()
+  })
+})
+
+describe('Board drag ghost and cancel (#44)', () => {
+  test('Board_duringDrag_showsGhost', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('drag-ghost')).toBeInTheDocument()
+  })
+
+  test('Board_afterDrop_ghostRemoved', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-18'))
+
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
+  })
+
+  test('Board_pointerCancel_cancelsDragWithoutMove', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    const { container } = render(Board, {
+      props: { board, myColor: 'white', legalMoves, onMove },
+    })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    const svg = container.querySelector('svg.board') as SVGSVGElement
+    await fireEvent.pointerCancel(svg)
+
+    expect(onMove).not.toHaveBeenCalled()
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
+  })
+})
