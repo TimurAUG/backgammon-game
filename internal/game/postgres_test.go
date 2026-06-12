@@ -15,12 +15,11 @@ import (
 	"github.com/TimurAUG/backgammon-game/internal/game"
 )
 
-// TestPostgresStorage_SaveAndLoad — round-trip: SaveGame + LoadGame через
-// реальный Postgres-контейнер. Проверяет, что доменное состояние, токены и
-// rolledForFirst сохраняются и восстанавливаются эквивалентно.
-//
-// TDD plan #36.
-func TestPostgresStorage_SaveAndLoad(t *testing.T) {
+// startPostgres поднимает одноразовый Postgres-контейнер и возвращает пул к
+// нему. Контейнер и пул освобождаются через t.Cleanup. В -short режиме тест
+// пропускается. Общий setup для интеграционных тестов Storage.
+func startPostgres(t *testing.T) *pgxpool.Pool {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skip postgres integration test in short mode")
 	}
@@ -48,10 +47,20 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 
 	pool, err := pgxpool.New(ctx, connStr)
 	require.NoError(t, err)
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 
+	return pool
+}
+
+// TestPostgresStorage_SaveAndLoad — round-trip: SaveGame + LoadGame через
+// реальный Postgres-контейнер. Проверяет, что доменное состояние, токены и
+// rolledForFirst сохраняются и восстанавливаются эквивалентно.
+//
+// TDD plan #36.
+func TestPostgresStorage_SaveAndLoad(t *testing.T) {
+	pool := startPostgres(t)
 	storage := game.NewPostgresStorage(pool)
-	require.NoError(t, storage.InitSchema(ctx))
+	require.NoError(t, storage.InitSchema(context.Background()))
 
 	// Создаём игру с произвольным заполненным состоянием. Доступ к
 	// приватным tokens/rolledForFirst идёт через метод-геттеры; для setup
@@ -59,7 +68,7 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 	mgr := game.NewManagerWithStorage(storage, nil)
 	white := &mockConn{}
 	black := &mockConn{}
-	_, _, err = mgr.JoinGame("g1", "tok-w", white)
+	_, _, err := mgr.JoinGame("g1", "tok-w", white)
 	require.NoError(t, err)
 	_, original, err := mgr.JoinGame("g1", "tok-b", black)
 	require.NoError(t, err)
@@ -107,4 +116,32 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 	require.Equal(t, [2]string{"auto-tok", ""}, autoLoaded.Tokens())
 	require.Equal(t, int8(15), autoLoaded.State.Board[23],
 		"начальная доска: 15 белых на пункте 24")
+}
+
+// TestPostgresStorage_PersistsChatHistory — история чата переживает round-trip
+// через Postgres: после SaveGame + LoadGame сообщения и их отправители
+// восстанавливаются эквивалентно. Так чат партии переживает рестарт сервера
+// (этап 14, persistence — как состояние партии в этапе 13).
+//
+// TDD plan #48.
+func TestPostgresStorage_PersistsChatHistory(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	mgr := game.NewManagerWithStorage(storage, nil)
+	_, _, err := mgr.JoinGame("g-chat", "tok-w", &mockConn{})
+	require.NoError(t, err)
+	_, original, err := mgr.JoinGame("g-chat", "tok-b", &mockConn{})
+	require.NoError(t, err)
+
+	original.PostChat(domain.White, "привет")
+	original.PostChat(domain.Black, "и тебе")
+
+	require.NoError(t, storage.SaveGame(original))
+
+	loaded, ok := storage.LoadGame("g-chat")
+	require.True(t, ok)
+	require.Equal(t, original.Chat(), loaded.Chat(),
+		"история чата должна восстановиться эквивалентно после round-trip")
 }

@@ -14,6 +14,7 @@ type ClientMessage struct {
 	Token  string `json:"token,omitempty"`
 	From   uint8  `json:"from,omitempty"`
 	To     uint8  `json:"to,omitempty"`
+	Text   string `json:"text,omitempty"` // CHAT: текст сообщения
 }
 
 // DicePayload — представление Dice в JSON-протоколе.
@@ -33,6 +34,13 @@ type MovePayload struct {
 	From uint8 `json:"from"`
 	To   uint8 `json:"to"`
 	Pip  uint8 `json:"pip"`
+}
+
+// ChatPayload — одно сообщение в CHAT_HISTORY. Sender — цвет автора строкой
+// ("white"/"black").
+type ChatPayload struct {
+	Sender string `json:"sender"`
+	Text   string `json:"text"`
 }
 
 // BorneOffPayload — счёт выкинутых шашек в STATE.
@@ -77,4 +85,7 @@ type ServerMessage struct {
 	Kind        string              `json:"kind,omitempty"`
 	Code        string              `json:"code,omitempty"`
 	Message     string              `json:"message,omitempty"`
+	Sender      string              `json:"sender,omitempty"` // CHAT: цвет автора ("white"/"black")
+	Text        string              `json:"text,omitempty"`   // CHAT: текст сообщения
+	Chat        []ChatPayload       `json:"chat,omitempty"`   // CHAT_HISTORY: вся история
 }

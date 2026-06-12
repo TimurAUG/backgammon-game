@@ -110,6 +110,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// История чата партии — чтобы вернувшийся игрок увидел прежнюю переписку (#49).
+	if ch := g.ChatHistoryMessage(); ch != nil {
+		if err := pc.Send(*ch); err != nil {
+			return
+		}
+	}
 	if opp := g.Opponent(color); opp != nil {
 		_ = opp.Send(protocol.ServerMessage{Type: "OPPONENT_JOINED"})
 	}
@@ -161,6 +167,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Type: "ERROR", Code: code, Message: err.Error(),
 				})
 			}
+		case "CHAT":
+			// Чат — relay поверх транспорта: домена не касается, валидацию и
+			// рассылку обоим делает game.PostChat. Отправитель — цвет слота.
+			g.PostChat(color, in.Text)
 		default:
 			_ = pc.Send(protocol.ServerMessage{
 				Type: "ERROR", Code: "INVALID_STATE",

@@ -784,3 +784,83 @@ func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*webso
 	_ = readMessage(t, ctx, conn1) // LEGAL_MOVES
 	return conn1, conn2
 }
+
+// TestHandler_Chat_BroadcastsToBothPlayers — CHAT от одного игрока приходит
+// обоим (эхо включает автора), с цветом-отправителем и текстом.
+//
+// TDD plan #49.
+func TestHandler_Chat_BroadcastsToBothPlayers(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1) // STATE
+
+	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	chat, err := json.Marshal(protocol.ClientMessage{Type: "CHAT", Text: "привет"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, chat))
+
+	msg1 := readMessage(t, ctx, conn1)
+	require.Equal(t, "CHAT", msg1.Type, "автор тоже получает своё сообщение (эхо)")
+	require.Equal(t, "white", msg1.Sender)
+	require.Equal(t, "привет", msg1.Text)
+
+	msg2 := readMessage(t, ctx, conn2)
+	require.Equal(t, "CHAT", msg2.Type)
+	require.Equal(t, "white", msg2.Sender)
+	require.Equal(t, "привет", msg2.Text)
+}
+
+// TestHandler_Chat_HistorySentOnReconnect — при (ре)коннекте сервер досылает
+// CHAT_HISTORY после STATE: вернувшийся игрок видит переписку, которая была до
+// обрыва. Инвариант протокола этапа 14.
+//
+// TDD plan #49.
+func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	_ = readMessage(t, ctx, conn1) // STATE
+	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	chat, err := json.Marshal(protocol.ClientMessage{Type: "CHAT", Text: "до связи"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, chat))
+	_ = readMessage(t, ctx, conn1) // CHAT (эхо)
+	_ = readMessage(t, ctx, conn2) // CHAT
+
+	// White рвёт соединение и возвращается тем же токеном. Игра остаётся
+	// активной (black на связи), история чата — в live-объекте.
+	conn1.Close(websocket.StatusNormalClosure, "reconnect")
+	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
+
+	st := readMessage(t, ctx, conn1b)
+	require.Equal(t, "STATE", st.Type, "после реконнекта сначала STATE")
+
+	hist := readMessage(t, ctx, conn1b)
+	require.Equal(t, "CHAT_HISTORY", hist.Type, "затем CHAT_HISTORY с прежней перепиской")
+	require.Len(t, hist.Chat, 1)
+	require.Equal(t, "white", hist.Chat[0].Sender)
+	require.Equal(t, "до связи", hist.Chat[0].Text)
+}

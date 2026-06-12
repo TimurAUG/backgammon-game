@@ -60,6 +60,7 @@ type Game struct {
 	tokens         [2]string
 	rng            io.Reader
 	rolledForFirst [2]bool
+	chat           []ChatMessage
 
 	// storage — куда персистится игра. nil → in-memory only (тесты домена,
 	// memoryStorage). Установлен Manager.JoinGame после Load/Create.

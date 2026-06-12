@@ -30,9 +30,10 @@ func NewPostgresStorage(pool *pgxpool.Pool) *PostgresStorage {
 	return &PostgresStorage{pool: pool}
 }
 
-// InitSchema создаёт таблицу games, если её ещё нет. Идемпотентно.
+// InitSchema создаёт таблицу games, если её ещё нет, и догоняет схему до
+// текущей версии. Идемпотентно.
 func (s *PostgresStorage) InitSchema(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `
+	if _, err := s.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS games (
 			id                     TEXT PRIMARY KEY,
 			state                  JSONB NOT NULL,
@@ -41,6 +42,14 @@ func (s *PostgresStorage) InitSchema(ctx context.Context) error {
 			rolled_for_first_white BOOLEAN NOT NULL DEFAULT FALSE,
 			rolled_for_first_black BOOLEAN NOT NULL DEFAULT FALSE
 		)
+	`); err != nil {
+		return err
+	}
+	// chat — колонка этапа 14 (история чата партии). Не доменная сущность,
+	// поэтому отдельной колонкой, а не внутри state-JSONB. ADD COLUMN IF NOT
+	// EXISTS — идемпотентная миграция для БД, созданных до этапа 14.
+	_, err := s.pool.Exec(ctx, `
+		ALTER TABLE games ADD COLUMN IF NOT EXISTS chat JSONB NOT NULL DEFAULT '[]'
 	`)
 	return err
 }
@@ -52,6 +61,7 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 	state := g.State
 	tokens := g.tokens
 	rfr := g.rolledForFirst
+	chat := g.chat
 	id := g.ID
 	g.mu.Unlock()
 
@@ -59,19 +69,24 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 	if err != nil {
 		return err
 	}
+	chatJSON, err := json.Marshal(chat)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO games (id, state, token_white, token_black,
-		                   rolled_for_first_white, rolled_for_first_black)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		                   rolled_for_first_white, rolled_for_first_black, chat)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
 			state                  = EXCLUDED.state,
 			token_white            = EXCLUDED.token_white,
 			token_black            = EXCLUDED.token_black,
 			rolled_for_first_white = EXCLUDED.rolled_for_first_white,
-			rolled_for_first_black = EXCLUDED.rolled_for_first_black
-	`, id, stateJSON, tokens[0], tokens[1], rfr[0], rfr[1])
+			rolled_for_first_black = EXCLUDED.rolled_for_first_black,
+			chat                   = EXCLUDED.chat
+	`, id, stateJSON, tokens[0], tokens[1], rfr[0], rfr[1], chatJSON)
 	return err
 }
 
@@ -82,14 +97,14 @@ func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var stateJSON []byte
+	var stateJSON, chatJSON []byte
 	var tokenW, tokenB string
 	var rfrW, rfrB bool
 	err := s.pool.QueryRow(ctx, `
 		SELECT state, token_white, token_black,
-		       rolled_for_first_white, rolled_for_first_black
+		       rolled_for_first_white, rolled_for_first_black, chat
 		FROM games WHERE id = $1
-	`, id).Scan(&stateJSON, &tokenW, &tokenB, &rfrW, &rfrB)
+	`, id).Scan(&stateJSON, &tokenW, &tokenB, &rfrW, &rfrB, &chatJSON)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false
@@ -102,10 +117,18 @@ func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 		return nil, false
 	}
 
+	var chat []ChatMessage
+	if len(chatJSON) > 0 {
+		if err := json.Unmarshal(chatJSON, &chat); err != nil {
+			return nil, false
+		}
+	}
+
 	return &Game{
 		ID:             id,
 		State:          state,
 		tokens:         [2]string{tokenW, tokenB},
 		rolledForFirst: [2]bool{rfrW, rfrB},
+		chat:           chat,
 	}, true
 }
