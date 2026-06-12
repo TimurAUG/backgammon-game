@@ -34,7 +34,12 @@
   // Источник перетаскивания (#41). Отдельно от selectedFrom: drag и клик-режим
   // не должны мешать друг другу (тап = pointerdown+up без движения порождает
   // ещё и click). Подсветку ведём по activeFrom — что активно сейчас.
+  // Перетаскивание активируется только после заметного движения (порог) — до
+  // этого pointerdown лишь запоминает кандидата. Тап без движения остаётся
+  // кликом (клик-режим), поэтому клики работают как раньше. #41
   let dragFrom = $state<number | null>(null)
+  let pendingDrag: { point: number; x: number; y: number } | null = null
+  const DRAG_THRESHOLD = 6 // px в экранных координатах
   // Позиция «летящей» шашки-призрака в координатах viewBox (#44).
   let dragX = $state(0)
   let dragY = $state(0)
@@ -82,25 +87,35 @@
       selectedFrom = selectedFrom === point ? null : point
       return
     }
-    // клик по чужой/пустой при невыделенной → ничего
+    // клик по пустому/чужому пункту → снять выделение (отмена выбора)
+    selectedFrom = null
   }
 
   // Drag&drop (#41–#42). Без setPointerCapture (jsdom его не реализует) — цель
   // сброса определяем по элементу под pointerup, а не по координатам курсора.
-  function startDrag(point: number): void {
-    if (myColor === null) return
-    if (!isMyChecker(point)) return
-    dragFrom = point
-    // Призрак появляется на верхней шашке стопки (её и «берём»).
-    const top = checkerAt(point, Math.max(0, checkerCount(point) - 1), checkerCount(point), flipped)
-    dragX = top.cx
-    dragY = top.cy
+  // pointerdown лишь запоминает кандидата; drag стартует в moveDrag по порогу.
+  function startDrag(point: number, event: PointerEvent): void {
+    if (myColor === null || !isMyChecker(point)) {
+      pendingDrag = null
+      return
+    }
+    pendingDrag = { point, x: event.clientX, y: event.clientY }
   }
 
-  // Призрак следует за курсором. screen→viewBox через CTM матрицу; в jsdom
-  // getScreenCTM нет — тогда no-op (позицию призрака мы не тестируем).
+  // Призрак следует за курсором. Drag активируется здесь — после движения за
+  // порог (тап без движения остаётся кликом). screen→viewBox через CTM; в jsdom
+  // getScreenCTM/координат нет → порог считаем пройденным, позицию не двигаем.
   function moveDrag(event: PointerEvent): void {
-    if (dragFrom === null) return
+    if (dragFrom === null) {
+      if (pendingDrag === null) return
+      const hasCoords =
+        typeof event.clientX === 'number' && typeof pendingDrag.x === 'number'
+      if (hasCoords) {
+        const moved = Math.hypot(event.clientX - pendingDrag.x, event.clientY - pendingDrag.y)
+        if (moved < DRAG_THRESHOLD) return
+      }
+      dragFrom = pendingDrag.point
+    }
     const ctm = boardEl?.getScreenCTM?.()
     if (!ctm) return
     const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
@@ -109,21 +124,24 @@
   }
 
   function dropOn(point: number): void {
-    if (dragFrom === null) return
+    pendingDrag = null
+    if (dragFrom === null) return // тап без движения → разберётся клик-режим
     if (isLegalTarget(point)) commitMove(dragFrom, point)
     else cancelDrag()
   }
 
-  // pointerup вне легальной цели (голый SVG / нелегальный пункт) → отмена.
+  // Отмена перетаскивания (pointerup вне цели / pointercancel). selectedFrom НЕ
+  // трогаем — иначе тап по выделенной шашке снимал бы выбор раньше click и
+  // ломал отмену повторным кликом.
   function cancelDrag(): void {
-    if (dragFrom === null) return
+    pendingDrag = null
     dragFrom = null
-    selectedFrom = null
   }
 
   // Завершение хода из любого режима (клик или drag): сброс выбора и
   // перетаскивания + onMove. Источник правды — сервер, ждём STATE.
   function commitMove(from: number, to: number): void {
+    pendingDrag = null
     dragFrom = null
     selectedFrom = null
     onMove(from, to)
@@ -171,7 +189,7 @@
       data-testid="point-{point}"
       points={trianglePoints(point, flipped)}
       onclick={() => handlePointClick(point)}
-      onpointerdown={() => startDrag(point)}
+      onpointerdown={(e) => startDrag(point, e)}
       onpointerup={() => dropOn(point)}
     />
   {/each}
@@ -188,7 +206,7 @@
         cy={pos.cy}
         r={pos.r}
         onclick={() => handlePointClick(point)}
-        onpointerdown={() => startDrag(point)}
+        onpointerdown={(e) => startDrag(point, e)}
         onpointerup={() => dropOn(point)}
       />
     {/each}
@@ -228,6 +246,13 @@
     height: auto;
     max-width: 760px;
     background: #e7c79b;
+    /* Тач: жесты на доске — это drag, а не скролл/зум/выделение текста.
+       Без этого на телефоне touchmove перехватывается браузером (pointercancel)
+       и шашки не перетаскиваются, а текст «выделяется». */
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
     /* Деревянная рамка/окантовка под реальную доску (#4). */
     border: 14px solid #6b4423;
     border-radius: 10px;
