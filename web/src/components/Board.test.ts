@@ -254,18 +254,26 @@ describe('Board bear-off UI (#20b)', () => {
   })
 })
 
+// Жест перетаскивания: нажать на источник и сдвинуть. pointermove активирует
+// drag (в jsdom у синтетического события нет координат → порог считается
+// пройденным). Чистый pointerDown без move — это тап (клик-режим), не drag.
+async function dragGesture(source: HTMLElement): Promise<void> {
+  await fireEvent.pointerDown(source)
+  await fireEvent.pointerMove(source)
+}
+
 describe('Board drag start (#41)', () => {
-  test('Board_pointerDownOwnChecker_marksSourceSelected', async () => {
+  test('Board_dragOwnChecker_marksSourceSelected', async () => {
     const board = emptyBoard()
     board[23] = 15
     render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
 
     expect(screen.getByTestId('point-24')).toHaveClass('selected')
   })
 
-  test('Board_pointerDownOwnChecker_highlightsLegalTargets', async () => {
+  test('Board_dragOwnChecker_highlightsLegalTargets', async () => {
     const board = emptyBoard()
     board[23] = 15
     const legalMoves: Move[] = [
@@ -274,29 +282,42 @@ describe('Board drag start (#41)', () => {
     ]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
 
     expect(screen.getByTestId('point-18')).toHaveClass('legal-target')
     expect(screen.getByTestId('point-19')).toHaveClass('legal-target')
   })
 
-  test('Board_pointerDownOpponentChecker_doesNotStartDrag', async () => {
+  test('Board_dragOpponentChecker_doesNotStartDrag', async () => {
     const board = emptyBoard()
     board[11] = -15
     render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-12-0'))
+    await dragGesture(screen.getByTestId('checker-12-0'))
 
     expect(screen.getByTestId('point-12')).not.toHaveClass('selected')
   })
 
-  test('Board_pointerDownWithoutMyColor_doesNotStartDrag', async () => {
+  test('Board_dragWithoutMyColor_doesNotStartDrag', async () => {
     const board = emptyBoard()
     board[23] = 15
     render(Board, { props: { board, legalMoves: [], onMove: vi.fn() } })
 
+    await dragGesture(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+  })
+
+  test('Board_pointerDownWithoutMove_doesNotStartDrag', async () => {
+    // чистый тап (нажатие без движения) — это клик-режим, не drag:
+    // ни призрака, ни подсветки источника до движения
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+
     await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
 
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
   })
 })
@@ -309,7 +330,7 @@ describe('Board drag drop → onMove (#42)', () => {
     const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     await fireEvent.pointerUp(screen.getByTestId('point-18'))
 
     expect(onMove).toHaveBeenCalledWith(24, 18)
@@ -322,8 +343,23 @@ describe('Board drag drop → onMove (#42)', () => {
     const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     await fireEvent.pointerUp(screen.getByTestId('point-1')) // не в legalMoves
+
+    expect(onMove).not.toHaveBeenCalled()
+  })
+
+  test('Board_tapWithoutDrag_doesNotCallOnMove', async () => {
+    // нажать и отпустить на легальной цели БЕЗ движения — drag не активен,
+    // ход не уходит (это работа клик-режима, не drag)
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-18'))
 
     expect(onMove).not.toHaveBeenCalled()
   })
@@ -334,7 +370,7 @@ describe('Board drag drop → onMove (#42)', () => {
     const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     await fireEvent.pointerUp(screen.getByTestId('point-18'))
 
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
@@ -350,7 +386,7 @@ describe('Board drag drop → onMove (#42)', () => {
       props: { board, myColor: 'white', legalMoves, onMove },
     })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     const svg = container.querySelector('svg.board') as SVGSVGElement
     await fireEvent.pointerUp(svg)
 
@@ -368,7 +404,7 @@ describe('Board drag bear-off (#43)', () => {
 
     expect(screen.queryByTestId('bear-off-drop')).toBeNull()
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-6-0'))
+    await dragGesture(screen.getByTestId('checker-6-0'))
 
     expect(screen.getByTestId('bear-off-drop')).toBeInTheDocument()
   })
@@ -380,7 +416,7 @@ describe('Board drag bear-off (#43)', () => {
     const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-6-0'))
+    await dragGesture(screen.getByTestId('checker-6-0'))
     await fireEvent.pointerUp(screen.getByTestId('bear-off-drop'))
 
     expect(onMove).toHaveBeenCalledWith(6, 0)
@@ -392,7 +428,7 @@ describe('Board drag bear-off (#43)', () => {
     const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
 
     expect(screen.queryByTestId('bear-off-drop')).toBeNull()
   })
@@ -406,7 +442,7 @@ describe('Board drag ghost and cancel (#44)', () => {
 
     expect(screen.queryByTestId('drag-ghost')).toBeNull()
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
 
     expect(screen.getByTestId('drag-ghost')).toBeInTheDocument()
   })
@@ -417,7 +453,7 @@ describe('Board drag ghost and cancel (#44)', () => {
     const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
     render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     await fireEvent.pointerUp(screen.getByTestId('point-18'))
 
     expect(screen.queryByTestId('drag-ghost')).toBeNull()
@@ -432,12 +468,47 @@ describe('Board drag ghost and cancel (#44)', () => {
       props: { board, myColor: 'white', legalMoves, onMove },
     })
 
-    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await dragGesture(screen.getByTestId('checker-24-0'))
     const svg = container.querySelector('svg.board') as SVGSVGElement
     await fireEvent.pointerCancel(svg)
 
     expect(onMove).not.toHaveBeenCalled()
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
     expect(screen.queryByTestId('drag-ghost')).toBeNull()
+  })
+})
+
+describe('Board click deselect (regression)', () => {
+  test('Board_tapSelectedChecker_deselects', async () => {
+    // повторный тап по выделенной шашке снимает выделение. Полная
+    // последовательность тапа: pointerdown + pointerup (без движения) + click.
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+    const checker = screen.getByTestId('checker-24-0')
+
+    await fireEvent.pointerDown(checker)
+    await fireEvent.pointerUp(checker)
+    await fireEvent.click(checker)
+    expect(screen.getByTestId('point-24')).toHaveClass('selected')
+
+    await fireEvent.pointerDown(checker)
+    await fireEvent.pointerUp(checker)
+    await fireEvent.click(checker)
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+  })
+
+  test('Board_clickEmptyPoint_deselects', async () => {
+    // клик по пустому пункту при выделении снимает выделение
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('checker-24-0'))
+    expect(screen.getByTestId('point-24')).toHaveClass('selected')
+
+    await fireEvent.click(screen.getByTestId('point-1')) // пустой пункт
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
   })
 })
