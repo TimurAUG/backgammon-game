@@ -253,3 +253,108 @@ describe('Board bear-off UI (#20b)', () => {
     expect(screen.queryByTestId('bear-off')).toBeNull()
   })
 })
+
+describe('Board drag start (#41)', () => {
+  test('Board_pointerDownOwnChecker_marksSourceSelected', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('point-24')).toHaveClass('selected')
+  })
+
+  test('Board_pointerDownOwnChecker_highlightsLegalTargets', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [
+      { from: 24, to: 18, pip: 6 },
+      { from: 24, to: 19, pip: 5 },
+    ]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('point-18')).toHaveClass('legal-target')
+    expect(screen.getByTestId('point-19')).toHaveClass('legal-target')
+  })
+
+  test('Board_pointerDownOpponentChecker_doesNotStartDrag', async () => {
+    const board = emptyBoard()
+    board[11] = -15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-12-0'))
+
+    expect(screen.getByTestId('point-12')).not.toHaveClass('selected')
+  })
+
+  test('Board_pointerDownWithoutMyColor_doesNotStartDrag', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, legalMoves: [], onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+  })
+})
+
+describe('Board drag drop → onMove (#42)', () => {
+  test('Board_dragToLegalTarget_callsOnMoveWithFromTo', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-18'))
+
+    expect(onMove).toHaveBeenCalledWith(24, 18)
+  })
+
+  test('Board_dragToIllegalTarget_doesNotCallOnMove', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-1')) // не в legalMoves
+
+    expect(onMove).not.toHaveBeenCalled()
+  })
+
+  test('Board_afterDrop_sourceAndTargetsCleared', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-18'))
+
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+    expect(screen.getByTestId('point-18')).not.toHaveClass('legal-target')
+  })
+
+  test('Board_releaseOutsideTarget_cancelsWithoutMove', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    const { container } = render(Board, {
+      props: { board, myColor: 'white', legalMoves, onMove },
+    })
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    const svg = container.querySelector('svg.board') as SVGSVGElement
+    await fireEvent.pointerUp(svg)
+
+    expect(onMove).not.toHaveBeenCalled()
+    expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+  })
+})
