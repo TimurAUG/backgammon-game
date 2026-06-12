@@ -38,6 +38,9 @@
   // Позиция «летящей» шашки-призрака в координатах viewBox (#44).
   let dragX = $state(0)
   let dragY = $state(0)
+  // Ссылка на сам <svg>. Через event.currentTarget нельзя: Svelte 5 делегирует
+  // pointermove, и там currentTarget — не этот узел (баг найден вживую).
+  let boardEl: SVGSVGElement | undefined
   const activeFrom = $derived(dragFrom ?? selectedFrom)
 
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
@@ -98,8 +101,7 @@
   // getScreenCTM нет — тогда no-op (позицию призрака мы не тестируем).
   function moveDrag(event: PointerEvent): void {
     if (dragFrom === null) return
-    const svg = event.currentTarget as SVGSVGElement
-    const ctm = svg.getScreenCTM?.()
+    const ctm = boardEl?.getScreenCTM?.()
     if (!ctm) return
     const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
     dragX = local.x
@@ -150,6 +152,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svg
+  bind:this={boardEl}
   class="board"
   viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
   xmlns="http://www.w3.org/2000/svg"
