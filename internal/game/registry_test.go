@@ -91,16 +91,18 @@ func TestManager_Postgres_BroadcastReachesBothPlayers(t *testing.T) {
 // TDD plan #43.
 func TestManager_Leave_UnloadsGameWhenBothDisconnected(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
-	cw, _, err := mgr.JoinGame("g1", "tok-w", &mockConn{})
+	connW := &mockConn{}
+	connB := &mockConn{}
+	cw, _, err := mgr.JoinGame("g1", "tok-w", connW)
 	require.NoError(t, err)
-	cb, _, err := mgr.JoinGame("g1", "tok-b", &mockConn{})
+	cb, _, err := mgr.JoinGame("g1", "tok-b", connB)
 	require.NoError(t, err)
 
-	mgr.Leave("g1", cw)
+	mgr.Leave("g1", cw, connW)
 	require.Equal(t, 1, mgr.ActiveCount(),
 		"пока подключён хотя бы один игрок — партия остаётся в реестре")
 
-	mgr.Leave("g1", cb)
+	mgr.Leave("g1", cb, connB)
 	require.Equal(t, 0, mgr.ActiveCount(),
 		"после ухода обоих партия выгружается из реестра")
 }
@@ -112,14 +114,46 @@ func TestManager_Leave_UnloadsGameWhenBothDisconnected(t *testing.T) {
 // TDD plan #43.
 func TestManager_RejoinAfterUnload_RestoresSlotFromStorage(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
-	cw, _, err := mgr.JoinGame("g1", "tok-w", &mockConn{})
+	connW := &mockConn{}
+	connB := &mockConn{}
+	cw, _, err := mgr.JoinGame("g1", "tok-w", connW)
 	require.NoError(t, err)
-	cb, _, err := mgr.JoinGame("g1", "tok-b", &mockConn{})
+	cb, _, err := mgr.JoinGame("g1", "tok-b", connB)
 	require.NoError(t, err)
-	mgr.Leave("g1", cw)
-	mgr.Leave("g1", cb)
+	mgr.Leave("g1", cw, connW)
+	mgr.Leave("g1", cb, connB)
 
 	color, _, err := mgr.JoinGame("g1", "tok-w", &mockConn{})
 	require.NoError(t, err)
 	require.Equal(t, cw, color, "реконнект по токену после выгрузки возвращает прежний слот")
+}
+
+// TestManager_Reconnect_StaleDetachKeepsFreshConn — после реконнекта соперника
+// (новое соединение тем же токеном) завершение ГОРУТИНЫ старого соединения не
+// должно обнулять слот: Detach снимает conn только если в слоте именно он.
+// Иначе старый Leave затирает свежий conn и broadcast перестаёт доходить —
+// «соперник не видит ходов, помогает только перезагрузка страницы».
+func TestManager_Reconnect_StaleDetachKeepsFreshConn(t *testing.T) {
+	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
+	white := &mockConn{}
+	blackOld := &mockConn{}
+	_, _, err := mgr.JoinGame("g1", "tok-w", white)
+	require.NoError(t, err)
+	cb, _, err := mgr.JoinGame("g1", "tok-b", blackOld)
+	require.NoError(t, err)
+
+	// реконнект black: новое соединение тем же токеном занимает слот
+	blackNew := &mockConn{}
+	_, g, err := mgr.JoinGame("g1", "tok-b", blackNew)
+	require.NoError(t, err)
+
+	// старое соединение отвалилось — его горутина зовёт Leave со СВОИМ conn
+	mgr.Leave("g1", cb, blackOld)
+
+	// broadcast после реконнекта должен дойти до свежего соединения
+	g.PostChat(domain.White, "hi")
+	require.NotNil(t, findMessage(blackNew.Messages(), "CHAT"),
+		"реконнектившийся игрок должен получать broadcast — свежий conn не затёрт stale Detach")
+	require.Nil(t, findMessage(blackOld.Messages(), "CHAT"),
+		"старое (отвалившееся) соединение broadcast не получает")
 }

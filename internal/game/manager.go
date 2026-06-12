@@ -104,12 +104,18 @@ func (g *Game) Opponent(c domain.Color) Conn {
 	return g.conns[domain.White]
 }
 
-// Detach снимает регистрацию соединения цвета c и сообщает, отключены ли
+// Detach снимает регистрацию соединения conn цвета c и сообщает, отключены ли
 // теперь оба игрока (тогда Manager выгрузит партию из реестра). Идемпотентно.
-func (g *Game) Detach(c domain.Color) (bothDisconnected bool) {
+//
+// Слот обнуляется ТОЛЬКО если в нём именно это conn. Иначе горутина старого
+// (отвалившегося) соединения затёрла бы свежий реконнект, занявший тот же слот,
+// и broadcast перестал бы доходить до вернувшегося игрока.
+func (g *Game) Detach(c domain.Color, conn Conn) (bothDisconnected bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.conns[c] = nil
+	if g.conns[c] == conn {
+		g.conns[c] = nil
+	}
 	return g.conns[domain.White] == nil && g.conns[domain.Black] == nil
 }
 
@@ -674,14 +680,14 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 // выгружает её из реестра активных игр — память не растёт по числу когда-либо
 // открытых партий. Состояние уже персистится в Storage после каждого
 // действия, поэтому повторный JOIN поднимет игру заново. Идемпотентно.
-func (m *Manager) Leave(id string, color domain.Color) {
+func (m *Manager) Leave(id string, color domain.Color, conn Conn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g, ok := m.active[id]
 	if !ok {
 		return
 	}
-	if g.Detach(color) {
+	if g.Detach(color, conn) {
 		delete(m.active, id)
 	}
 }

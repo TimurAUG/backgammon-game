@@ -94,8 +94,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// При разрыве — отсоединяемся через менеджер: он выгрузит партию из реестра,
-	// когда уйдут оба игрока (#43). Состояние остаётся в Storage.
-	defer h.mgr.Leave(msg.GameID, color)
+	// когда уйдут оба игрока (#43). Состояние остаётся в Storage. Передаём свой
+	// pc: если игрок уже реконнектился (в слоте новый conn), наш Leave его не
+	// затрёт — иначе вернувшийся соперник перестал бы получать broadcast.
+	defer h.mgr.Leave(msg.GameID, color, pc)
 
 	if err := pc.Send(game.JoinedMessage(color)); err != nil {
 		return
