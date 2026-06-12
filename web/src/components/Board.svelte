@@ -30,6 +30,11 @@
   const TRIANGLE_HALF_BASE = COLUMN_WIDTH * 0.4
 
   let selectedFrom = $state<number | null>(null)
+  // Источник перетаскивания (#41). Отдельно от selectedFrom: drag и клик-режим
+  // не должны мешать друг другу (тап = pointerdown+up без движения порождает
+  // ещё и click). Подсветку ведём по activeFrom — что активно сейчас.
+  let dragFrom = $state<number | null>(null)
+  const activeFrom = $derived(dragFrom ?? selectedFrom)
 
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
   // слева (у чёрного/наблюдателя — как есть). #1.
@@ -56,8 +61,8 @@
   }
 
   function isLegalTarget(point: number): boolean {
-    if (selectedFrom === null) return false
-    return legalMoves.some((m) => m.from === selectedFrom && m.to === point)
+    if (activeFrom === null) return false
+    return legalMoves.some((m) => m.from === activeFrom && m.to === point)
   }
 
   function handlePointClick(point: number): void {
@@ -75,6 +80,29 @@
     // клик по чужой/пустой при невыделенной → ничего
   }
 
+  // Drag&drop (#41–#42). Без setPointerCapture (jsdom его не реализует) — цель
+  // сброса определяем по элементу под pointerup, а не по координатам курсора.
+  function startDrag(point: number): void {
+    if (myColor === null) return
+    if (isMyChecker(point)) dragFrom = point
+  }
+
+  function dropOn(point: number): void {
+    if (dragFrom === null) return
+    const from = dragFrom
+    const legal = isLegalTarget(point)
+    dragFrom = null
+    selectedFrom = null
+    if (legal) onMove(from, point)
+  }
+
+  // pointerup вне легальной цели (голый SVG / нелегальный пункт) → отмена.
+  function cancelDrag(): void {
+    if (dragFrom === null) return
+    dragFrom = null
+    selectedFrom = null
+  }
+
   // Выкид: у пункта 0 на доске нет, поэтому отдельный контрол. Появляется,
   // когда у выделенной шашки есть легальный выкид (to === 0).
   const bearOffAvailable = $derived(
@@ -89,10 +117,12 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <svg
   class="board"
   viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
   xmlns="http://www.w3.org/2000/svg"
+  onpointerup={cancelDrag}
 >
   <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
   {#each POINTS as point (point)}
@@ -100,11 +130,13 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <polygon
       class="point {point % 2 === 0 ? 'even' : 'odd'}"
-      class:selected={selectedFrom === point}
+      class:selected={selectedFrom === point || dragFrom === point}
       class:legal-target={isLegalTarget(point)}
       data-testid="point-{point}"
       points={trianglePoints(point, flipped)}
       onclick={() => handlePointClick(point)}
+      onpointerdown={() => startDrag(point)}
+      onpointerup={() => dropOn(point)}
     />
   {/each}
 
@@ -120,6 +152,8 @@
         cy={pos.cy}
         r={pos.r}
         onclick={() => handlePointClick(point)}
+        onpointerdown={() => startDrag(point)}
+        onpointerup={() => dropOn(point)}
       />
     {/each}
   {/each}
