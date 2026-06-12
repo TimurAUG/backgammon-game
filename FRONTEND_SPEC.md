@@ -44,6 +44,7 @@ web/
       game.svelte.ts          — board/turn/dice/borneOff/status/isFirstMove/legalMoves/gameOver/myColor/firstRoll/started
       connection.svelte.ts    — state: idle | connecting | connected | reconnecting | error
       notifications.svelte.ts — стек тостов (соперник присоединился / «Твой бросок»)
+      chat.svelte.ts          — сообщения чата партии + счётчик непрочитанных + open
     screens/
       Connect.svelte     — создать игру / войти по приглашению / ручной ввод; persistence в localStorage
       Game.svelte        — Board + Dice + ActionBar + GameOver + баннеры (первый бросок, переподключение)
@@ -54,6 +55,7 @@ web/
       GameOver.svelte    — модалка результата
       Toast.svelte       — одна плашка уведомления (role=status/aria-live, авто-скрытие)
       Notifications.svelte — контейнер тостов из стора
+      Chat.svelte          — сворачиваемая панель чата партии (лента + ввод + бейдж непрочитанных)
     lib/
       geometry.ts        — координаты SVG для пункта i и j-й шашки на пункте
       credentials.ts     — gameId+token в localStorage
@@ -190,6 +192,17 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
     - a. `OPPONENT_JOINED` → тост «Соперник присоединился» (в `App`, рядом с маршрутизацией сообщений; `resetNotifications` в `endSession`).
     - b. Переход «ожидается мой бросок» (`status == waitingForRoll` и мой ход на обычном ходу, либо стадия розыгрыша первого хода) → тост «Твой бросок» + `playRollCue()` (в `Game`, через `$effect`-детектор перехода `false→true`).
 
+### Этап 14 — чат партии
+
+Сворачиваемая панель чата на экране Game. Сервер — источник правды: рисуем только то, что пришло в `CHAT`/`CHAT_HISTORY`, без оптимистичного эха своего сообщения. Отправитель — цвет (`sender`); сопоставляем с `myColor` → «своё/чужое».
+
+35. `protocol/messages.ts`: `ClientMessage += {type:'CHAT', text}`; `ServerMessage += {type:'CHAT', sender, text}` и `{type:'CHAT_HISTORY', chat}`. Сериализация CHAT и парсинг CHAT/CHAT_HISTORY.
+36. `stores/chat.svelte.ts`: `$state` `{messages, unread, open}`; `applyChat` (push; `++unread`, если панель закрыта), `applyChatHistory` (replace), `setChatOpen` (`open=true` обнуляет `unread`), `resetChat`.
+37. `components/Chat.svelte`: рендер ленты из стора; своё сообщение (`sender == myColor`) и чужое различаются (класс/выравнивание).
+38. `components/Chat.svelte`: поле ввода + отправка (Enter/кнопка) → `onAction({type:'CHAT', text})`, поле очищается; пустое/пробельное не шлётся.
+39. `components/Chat.svelte`: сворачивание (кнопка-иконка) + бейдж `unread`; разворот зовёт `setChatOpen(true)`.
+40. Проводка: `App` маршрутизирует `CHAT`→`applyChat` (+тост при закрытой панели), `CHAT_HISTORY`→`applyChatHistory`, `resetChat` в `endSession`; `NotificationKind += 'chat'`; `Game` рендерит `<Chat>`.
+
 ## 8. Прогресс
 
 Раздел заполняется по ходу работы. Маркируем закрытые этапы галочкой.
@@ -208,6 +221,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Этап 11 — уведомления о событиях (`stores/notifications.svelte.ts` — стек тостов push/dismiss/reset, push возвращает id; `lib/sound.ts` — `playRollCue()` коротким тоном через Web Audio с DI-конструктором, no-op без поддержки/при ошибке; `components/Toast.svelte` + `Notifications.svelte` — тосты с `role=status`/`aria-live`, ручным закрытием и авто-скрытием по таймеру, фиксированный оверлей в App; проводка: `App` ловит `OPPONENT_JOINED` → «Соперник присоединился», `Game` через `$effect`-детектор перехода «ожидается мой бросок» → «Твой бросок» + звук — и на обычном ходу, и на розыгрыше первого хода; флаг `started` в gameStore отсекает initial-снапшот между JOINED и первым STATE, чтобы не было ложного звона при возврате в игру). 189 тестов фронта (+22).
 - ✅ Фикс invite vs saved creds — `App.svelte` авто-подключается по сохранённым кредам только когда нет приглашения или приглашение в свою же игру (`saved.gameId == inviteGameId`); приглашение в другую игру ведёт через Connect (свой токен), иначе игрок занимал чужой слот/уходил не в ту игру.
 - ✅ Этап 13 (фронт-часть) — плашка «Переподключение…» в `Game.svelte` при `connection.state == 'reconnecting'` (`role=status`/`aria-live`): пауза при рестарте сервера читается как восстановление, а не зависание; авто-реконнект WSClient уже был. 193 теста фронта.
+- ✅ Этап 14 — чат партии (#35–#40): типы `CHAT`/`CHAT_HISTORY` в `messages.ts`; стор `chat.svelte.ts` (`messages`/`unread`/`open`); `Chat.svelte` — сворачиваемая панель в углу (лента свои/чужие по `sender` vs `myColor`, ввод + Enter, бейдж непрочитанных, на узком экране — оверлей); проводка: `App` (`CHAT`→`applyChat` + тост чужого при свёрнутой панели, `CHAT_HISTORY`→`applyChatHistory`, `resetChat` в `endSession`), `NotificationKind += 'chat'`, `Game` рендерит `<Chat>`. Сервер — источник правды: без оптимистичного эха. 219 тестов фронта (+26).
 
 ## 9. Открытые вопросы
 
