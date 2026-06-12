@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { resetConnectionState, setConnectionState } from '../stores/connection.svelte'
 import { applyServerMessage, resetGameState } from '../stores/game.svelte'
 import { notifications, resetNotifications } from '../stores/notifications.svelte'
+import { resetChat } from '../stores/chat.svelte'
 import { playRollCue } from '../lib/sound'
 import { stateFixture } from '../../tests/fixtures'
 
@@ -19,6 +20,7 @@ beforeEach(() => {
   resetGameState()
   resetConnectionState()
   resetNotifications()
+  resetChat()
   vi.clearAllMocks()
 })
 
@@ -296,5 +298,28 @@ describe('Game your-roll cue (#34b)', () => {
     flushSync()
 
     expect(playRollCue).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Game chat panel (#40)', () => {
+  test('Game_rendersChatToggle', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('chat-toggle')).toBeInTheDocument()
+  })
+
+  test('Game_chatSend_forwardsChatActionThroughOnAction', async () => {
+    const onAction = vi.fn()
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    render(Game, { props: { onAction, onNewGame: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('chat-toggle'))
+    await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: 'привет' } })
+    await fireEvent.click(screen.getByTestId('chat-send'))
+
+    expect(onAction).toHaveBeenCalledWith({ type: 'CHAT', text: 'привет' })
   })
 })

@@ -10,6 +10,7 @@ import { loadCredentials, saveCredentials, type Credentials } from './lib/creden
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
 import { resetNotifications } from './stores/notifications.svelte'
+import { chat, resetChat } from './stores/chat.svelte'
 import { WSClient, type WSConnectionCtor } from './transport/ws'
 import { MockWebSocket } from '../tests/mockWebSocket'
 import { stateFixture } from '../tests/fixtures'
@@ -21,6 +22,7 @@ beforeEach(() => {
   resetGameState()
   resetConnectionState()
   resetNotifications()
+  resetChat()
   MockWebSocket.reset()
   window.history.replaceState(null, '', '/')
 })
@@ -272,6 +274,64 @@ describe('App opponent-joined notification (#34a)', () => {
     await fireEvent.click(await screen.findByTestId('action-new-game'))
 
     expect(screen.queryByText('Соперник присоединился')).toBeNull()
+  })
+})
+
+describe('App chat (#40)', () => {
+  async function connectedSocket(myColor: 'white' | 'black' = 'white'): Promise<MockWebSocket> {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: myColor })
+    ws.receive(stateFixture())
+    return ws
+  }
+
+  test('App_incomingChatFromOpponent_appendsAndToasts', async () => {
+    const ws = await connectedSocket('white')
+
+    ws.receive({ type: 'CHAT', sender: 'black', text: 'привет соперник' })
+
+    expect(chat.messages).toEqual([{ sender: 'black', text: 'привет соперник' }])
+    expect(await screen.findByText('привет соперник')).toBeInTheDocument()
+  })
+
+  test('App_ownChatEcho_appendsButNoToast', async () => {
+    const ws = await connectedSocket('white')
+
+    ws.receive({ type: 'CHAT', sender: 'white', text: 'моё эхо' })
+
+    expect(chat.messages).toEqual([{ sender: 'white', text: 'моё эхо' }])
+    // Своё сообщение (эхо) не тостим; панель свёрнута → текста в DOM нет.
+    expect(screen.queryByText('моё эхо')).toBeNull()
+  })
+
+  test('App_incomingChatHistory_populatesStore', async () => {
+    const ws = await connectedSocket('white')
+
+    ws.receive({
+      type: 'CHAT_HISTORY',
+      chat: [
+        { sender: 'white', text: 'раз' },
+        { sender: 'black', text: 'два' },
+      ],
+    })
+
+    expect(chat.messages).toEqual([
+      { sender: 'white', text: 'раз' },
+      { sender: 'black', text: 'два' },
+    ])
+  })
+
+  test('App_newGame_clearsChat', async () => {
+    const ws = await connectedSocket('white')
+    ws.receive({ type: 'CHAT', sender: 'black', text: 'до встречи' })
+    ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
+
+    await fireEvent.click(await screen.findByTestId('action-new-game'))
+
+    expect(chat.messages).toEqual([])
   })
 })
 

@@ -8,6 +8,7 @@ export type ClientMessage =
   | { type: 'MOVE'; from: number; to: number }
   | { type: 'END_TURN' }
   | { type: 'RESIGN' }
+  | { type: 'CHAT'; text: string }
 
 export function serializeClientMessage(msg: ClientMessage): string {
   return JSON.stringify(msg)
@@ -42,6 +43,13 @@ export interface Move {
   pip: number
 }
 
+// ChatMessage — одно сообщение чата партии. sender — цвет автора (для CHAT и
+// элементов CHAT_HISTORY). Зеркало protocol.ChatPayload на бэке.
+export interface ChatMessage {
+  sender: Color
+  text: string
+}
+
 export type ServerMessage =
   | { type: 'JOINED'; color: Color }
   | {
@@ -58,6 +66,8 @@ export type ServerMessage =
   | { type: 'OPPONENT_JOINED'; name?: string }
   | { type: 'OPPONENT_LEFT' }
   | { type: 'GAME_OVER'; winner: Color; kind: WinKind }
+  | { type: 'CHAT'; sender: Color; text: string }
+  | { type: 'CHAT_HISTORY'; chat: ChatMessage[] }
   | { type: 'ERROR'; code: ErrorCode; message: string }
 
 export function parseServerMessage(raw: string): ServerMessage {

@@ -3,6 +3,7 @@
   import Board from '../components/Board.svelte'
   import Dice from '../components/Dice.svelte'
   import GameOver from '../components/GameOver.svelte'
+  import Chat from '../components/Chat.svelte'
   import type { ClientMessage } from '../protocol/messages'
   import { playRollCue } from '../lib/sound'
   import { connection } from '../stores/connection.svelte'
@@ -147,6 +148,7 @@
     {/if}
   </aside>
   <GameOver gameOver={gameState.gameOver} myColor={gameState.myColor} {onNewGame} />
+  <Chat myColor={gameState.myColor} {onAction} />
 </main>
 
 <style>

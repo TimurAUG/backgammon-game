@@ -5,8 +5,9 @@
   import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
-  import { applyServerMessage, resetGameState } from './stores/game.svelte'
+  import { applyServerMessage, gameState, resetGameState } from './stores/game.svelte'
   import { pushNotification, resetNotifications } from './stores/notifications.svelte'
+  import { applyChat, applyChatHistory, chat, resetChat } from './stores/chat.svelte'
   import { WSClient } from './transport/ws'
 
   // createClient инжектируется в тестах (WSClient поверх MockWebSocket).
@@ -52,6 +53,19 @@
     if (msg.type === 'OPPONENT_JOINED') {
       pushNotification('opponentJoined', 'Соперник присоединился')
     }
+    if (msg.type === 'CHAT') {
+      applyChat({ sender: msg.sender, text: msg.text })
+      // Тост — только на чужое сообщение и только когда панель свёрнута:
+      // открытую ленту игрок видит сам, своё эхо тостить незачем.
+      if (msg.sender !== gameState.myColor && !chat.open) {
+        pushNotification('chat', msg.text)
+      }
+      return
+    }
+    if (msg.type === 'CHAT_HISTORY') {
+      applyChatHistory(msg.chat)
+      return
+    }
     applyServerMessage(msg)
   }
 
@@ -65,6 +79,7 @@
     resetGameState()
     resetConnectionState()
     resetNotifications()
+    resetChat()
   }
 
   function handleNewGame(): void {

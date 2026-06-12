@@ -25,6 +25,7 @@ describe('serializeClientMessage', () => {
     ['MOVE bear off (to=0)', { type: 'MOVE', from: 1, to: 0 }, '{"type":"MOVE","from":1,"to":0}'],
     ['END_TURN', { type: 'END_TURN' }, '{"type":"END_TURN"}'],
     ['RESIGN', { type: 'RESIGN' }, '{"type":"RESIGN"}'],
+    ['CHAT', { type: 'CHAT', text: 'привет' }, '{"type":"CHAT","text":"привет"}'],
   ])('serializeClientMessage_%s_matchesProtocol', (_label, msg, expected) => {
     expect(serializeClientMessage(msg)).toBe(expected)
   })
@@ -87,6 +88,30 @@ describe('parseServerMessage', () => {
     if (msg.type !== 'GAME_OVER') return
     expect(msg.winner).toBe('black')
     expect(msg.kind).toBe('koks')
+  })
+
+  test('parseServerMessage_CHAT_keepsSenderAndText', () => {
+    const msg = parseServerMessage('{"type":"CHAT","sender":"white","text":"гг"}')
+    expect(msg.type).toBe('CHAT')
+    if (msg.type !== 'CHAT') return
+    expect(msg.sender).toBe('white')
+    expect(msg.text).toBe('гг')
+  })
+
+  test('parseServerMessage_CHAT_HISTORY_parsesArray', () => {
+    const raw = JSON.stringify({
+      type: 'CHAT_HISTORY',
+      chat: [
+        { sender: 'white', text: 'раз' },
+        { sender: 'black', text: 'два' },
+      ],
+    })
+    const msg = parseServerMessage(raw)
+    expect(msg.type).toBe('CHAT_HISTORY')
+    if (msg.type !== 'CHAT_HISTORY') return
+    expect(msg.chat).toHaveLength(2)
+    expect(msg.chat[0]).toEqual({ sender: 'white', text: 'раз' })
+    expect(msg.chat[1]).toEqual({ sender: 'black', text: 'два' })
   })
 
   test('parseServerMessage_ERROR_keepsCodeAndMessage', () => {
