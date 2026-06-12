@@ -46,6 +46,8 @@
   // Ссылка на сам <svg>. Через event.currentTarget нельзя: Svelte 5 делегирует
   // pointermove, и там currentTarget — не этот узел (баг найден вживую).
   let boardEl: SVGSVGElement | undefined
+  // id активного указателя — для захвата на доску (touch/боттом-шит, #drag-touch).
+  let activePointerId: number | null = null
   const activeFrom = $derived(dragFrom ?? selectedFrom)
 
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
@@ -91,20 +93,22 @@
     selectedFrom = null
   }
 
-  // Drag&drop (#41–#42). Без setPointerCapture (jsdom его не реализует) — цель
-  // сброса определяем по элементу под pointerup, а не по координатам курсора.
-  // pointerdown лишь запоминает кандидата; drag стартует в moveDrag по порогу.
+  // Drag&drop (#41–#42). pointerdown лишь запоминает кандидата; drag стартует
+  // в moveDrag по порогу движения (тап без движения остаётся кликом).
   function startDrag(point: number, event: PointerEvent): void {
     if (myColor === null || !isMyChecker(point)) {
       pendingDrag = null
       return
     }
     pendingDrag = { point, x: event.clientX, y: event.clientY }
+    activePointerId = event.pointerId
   }
 
   // Призрак следует за курсором. Drag активируется здесь — после движения за
-  // порог (тап без движения остаётся кликом). screen→viewBox через CTM; в jsdom
-  // getScreenCTM/координат нет → порог считаем пройденным, позицию не двигаем.
+  // порог. При активации захватываем указатель на доску: события идут к нам, а
+  // не к скролл-контейнеру/боттом-шиту, и на touch снимается неявный захват на
+  // исходную шашку (тогда drop-цель берём по координатам). screen→viewBox через
+  // CTM; в jsdom getScreenCTM/координат нет → порог пройден, позицию не двигаем.
   function moveDrag(event: PointerEvent): void {
     if (dragFrom === null) {
       if (pendingDrag === null) return
@@ -115,6 +119,7 @@
         if (moved < DRAG_THRESHOLD) return
       }
       dragFrom = pendingDrag.point
+      boardEl?.setPointerCapture?.(event.pointerId)
     }
     const ctm = boardEl?.getScreenCTM?.()
     if (!ctm) return
@@ -123,11 +128,45 @@
     dragY = local.y
   }
 
-  function dropOn(point: number): void {
+  // Завершение жеста (pointerup/pointercancel). На touch pointerup приходит на
+  // исходную шашку (неявный захват), поэтому цель определяем по координатам
+  // отпускания через elementFromPoint, а не по event.target. В jsdom
+  // elementFromPoint даёт null → fallback на target (тесты шлют up на цель).
+  function endDrag(event: PointerEvent): void {
     pendingDrag = null
-    if (dragFrom === null) return // тап без движения → разберётся клик-режим
-    if (isLegalTarget(point)) commitMove(dragFrom, point)
+    if (dragFrom === null) {
+      activePointerId = null
+      return // тап без движения → разберётся клик-режим
+    }
+    const from = dragFrom
+    const point = resolveDropPoint(event)
+    releaseCapture()
+    if (point !== null && isLegalTarget(point)) commitMove(from, point)
     else cancelDrag()
+  }
+
+  function resolveDropPoint(event: PointerEvent): number | null {
+    let el: Element | null = null
+    if (typeof event.clientX === 'number' && typeof document.elementFromPoint === 'function') {
+      el = document.elementFromPoint(event.clientX, event.clientY)
+    }
+    el = el ?? (event.target as Element | null)
+    if (el === null) return null
+    if (el.closest('[data-testid="bear-off-drop"]') !== null) return 0 // выкид
+    const node = el.closest('[data-testid]')
+    const id = node?.getAttribute('data-testid') ?? ''
+    const pointMatch = /^point-(\d+)$/.exec(id)
+    if (pointMatch) return Number(pointMatch[1])
+    const checkerMatch = /^checker-(\d+)-/.exec(id)
+    if (checkerMatch) return Number(checkerMatch[1])
+    return null
+  }
+
+  function releaseCapture(): void {
+    if (activePointerId !== null && boardEl?.hasPointerCapture?.(activePointerId)) {
+      boardEl.releasePointerCapture(activePointerId)
+    }
+    activePointerId = null
   }
 
   // Отмена перетаскивания (pointerup вне цели / pointercancel). selectedFrom НЕ
@@ -136,6 +175,7 @@
   function cancelDrag(): void {
     pendingDrag = null
     dragFrom = null
+    releaseCapture()
   }
 
   // Завершение хода из любого режима (клик или drag): сброс выбора и
@@ -144,8 +184,27 @@
     pendingDrag = null
     dragFrom = null
     selectedFrom = null
+    releaseCapture()
     onMove(from, to)
   }
+
+  // Завершение жеста слушаем на window: на touch с захватом pointerup приходит
+  // не на цель, а bear-off-зона вообще вне <svg> — глобальный слушатель ловит
+  // отпускание где угодно. Активен только пока тащим (проверка внутри).
+  $effect(() => {
+    const onUp = (e: PointerEvent) => {
+      if (dragFrom !== null) endDrag(e)
+    }
+    const onCancel = () => {
+      if (dragFrom !== null) cancelDrag()
+    }
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    return () => {
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
+  })
 
   // Выкид: у пункта 0 на доске нет, поэтому отдельный контрол. Появляется,
   // когда у выделенной шашки есть легальный выкид (to === 0).
@@ -158,14 +217,10 @@
   }
 
   // Выкид перетаскиванием (#43): drop-зона видна, пока тащим шашку с легальным
-  // выкидом; on pointerup на ней → onMove(from, 0).
+  // выкидом. Отпускание над ней резолвится в endDrag по координатам → to=0.
   const dragBearOffAvailable = $derived(
     dragFrom !== null && legalMoves.some((m) => m.from === dragFrom && m.to === 0),
   )
-
-  function dropBearOff(): void {
-    if (dragFrom !== null) commitMove(dragFrom, 0)
-  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -175,8 +230,6 @@
   viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
   xmlns="http://www.w3.org/2000/svg"
   onpointermove={moveDrag}
-  onpointerup={cancelDrag}
-  onpointercancel={cancelDrag}
 >
   <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
   {#each POINTS as point (point)}
@@ -190,7 +243,6 @@
       points={trianglePoints(point, flipped)}
       onclick={() => handlePointClick(point)}
       onpointerdown={(e) => startDrag(point, e)}
-      onpointerup={() => dropOn(point)}
     />
   {/each}
 
@@ -207,7 +259,6 @@
         r={pos.r}
         onclick={() => handlePointClick(point)}
         onpointerdown={(e) => startDrag(point, e)}
-        onpointerup={() => dropOn(point)}
       />
     {/each}
   {/each}
@@ -227,10 +278,8 @@
 </svg>
 
 {#if dragBearOffAvailable}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bear-off-drop" data-testid="bear-off-drop" onpointerup={dropBearOff}>
-    Брось сюда, чтобы сбросить →
-  </div>
+  <!-- Drop-цель резолвится по координатам отпускания (endDrag), не обработчиком. -->
+  <div class="bear-off-drop" data-testid="bear-off-drop">Брось сюда, чтобы сбросить →</div>
 {/if}
 
 {#if bearOffAvailable}
@@ -262,6 +311,12 @@
   }
   .bar {
     fill: #5a3a1e;
+  }
+  /* Тач: явно и на интерактивных элементах — чтобы жест перетаскивания не
+     уходил в скролл страницы/боттом-шита. */
+  .point,
+  .checker {
+    touch-action: none;
   }
   .point.even {
     fill: #c19a6b;
