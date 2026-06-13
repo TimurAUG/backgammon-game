@@ -120,3 +120,43 @@ func findMessage(msgs []protocol.ServerMessage, typ string) *protocol.ServerMess
 	}
 	return nil
 }
+
+// TestGame_Roll_NoLegalMoves_BroadcastsTurnSkipped — если после броска у игрока
+// нет НИ ОДНОГО легального хода, сервер авто-передаёт ход и шлёт обоим
+// TURN_SKIPPED с выпавшими кубиками. Иначе очередь «проскакивает» молча и игрок
+// не понимает, что произошло.
+func TestGame_Roll_NoLegalMoves_BroadcastsTurnSkipped(t *testing.T) {
+	// rng-байты [0,1] → кубики (1,2). Позиция: все белые на голове (24), оба
+	// пипса упираются в чёрных (23, 22) — ходить нечем, выкид невозможен.
+	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 1}))
+	white := &mockConn{}
+	black := &mockConn{}
+	_, _, err := mgr.JoinGame("g1", "tok-w", white)
+	require.NoError(t, err)
+	_, g, err := mgr.JoinGame("g1", "tok-b", black)
+	require.NoError(t, err)
+
+	var b domain.Board
+	b[23] = 15 // пункт 24: 15 белых (голова)
+	b[22] = -1 // пункт 23: 1 чёрная — блок 24→23 (пип 1)
+	b[21] = -1 // пункт 22: 1 чёрная — блок 24→22 (пип 2)
+	b[11] = -13
+	g.State = domain.GameState{
+		Board:       b,
+		Turn:        domain.White,
+		Status:      domain.StatusWaitingForRoll,
+		IsFirstMove: [2]bool{false, false},
+	}
+
+	require.NoError(t, g.Roll(domain.White))
+
+	skip := findMessage(white.Messages(), "TURN_SKIPPED")
+	require.NotNil(t, skip, "игрок, чей ход пропущен, должен получить TURN_SKIPPED")
+	require.Equal(t, "white", skip.Color)
+	require.NotNil(t, skip.Dice)
+	require.Equal(t, uint8(1), skip.Dice.A)
+	require.Equal(t, uint8(2), skip.Dice.B)
+
+	require.NotNil(t, findMessage(black.Messages(), "TURN_SKIPPED"),
+		"соперник тоже получает TURN_SKIPPED — узнаёт, что ход перешёл к нему")
+}

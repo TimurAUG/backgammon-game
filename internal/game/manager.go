@@ -382,6 +382,22 @@ func (g *Game) broadcastStateLocked() {
 	}
 }
 
+// broadcastTurnSkippedLocked сообщает обоим, что ход игрока c пропущен из-за
+// отсутствия легальных ходов (с выпавшими кубиками d). Вызывается под mu, до
+// обнуления Dice в autoEndTurnLocked.
+func (g *Game) broadcastTurnSkippedLocked(c domain.Color, d domain.Dice) {
+	msg := protocol.ServerMessage{
+		Type:  "TURN_SKIPPED",
+		Color: colorString(c),
+		Dice:  dicePayload(d),
+	}
+	for _, conn := range g.conns {
+		if conn != nil {
+			_ = conn.Send(msg)
+		}
+	}
+}
+
 // sendLegalMovesOrAutoEndTurnLocked отправляет LEGAL_MOVES игроку цвета c
 // если есть хотя бы один легальный ход. Если ходов нет — автоматически
 // передаёт ход сопернику через autoEndTurnLocked. Вызывается с захваченным mu.
@@ -420,6 +436,17 @@ func (g *Game) autoEndTurnLocked(c domain.Color) {
 			}
 		}
 		return
+	}
+	// «Бросил, а ходить нечем»: если игрок не использовал НИ ОДНОГО пипса
+	// (полный набор остался) — шлём обоим TURN_SKIPPED с выпавшими кубиками,
+	// чтобы было видно, почему очередь сразу перешла. Если часть пипсов уже
+	// использована (auto-END в середине хода) — это не «нечем ходить», молчим.
+	fullPips := 2
+	if g.State.Dice.IsDouble {
+		fullPips = 4
+	}
+	if len(g.State.Dice.Remaining) == fullPips {
+		g.broadcastTurnSkippedLocked(c, g.State.Dice)
 	}
 	next := domain.Black
 	if c == domain.Black {
@@ -467,18 +494,19 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 		},
 	}
 	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
-		remaining := make([]int, len(s.Dice.Remaining))
-		for i, p := range s.Dice.Remaining {
-			remaining[i] = int(p)
-		}
-		msg.Dice = &protocol.DicePayload{
-			A:         s.Dice.A,
-			B:         s.Dice.B,
-			IsDouble:  s.Dice.IsDouble,
-			Remaining: remaining,
-		}
+		msg.Dice = dicePayload(s.Dice)
 	}
 	return msg
+}
+
+// dicePayload конвертирует доменный Dice в JSON-payload. Remaining — []int,
+// а не []uint8 (см. DicePayload).
+func dicePayload(d domain.Dice) *protocol.DicePayload {
+	remaining := make([]int, len(d.Remaining))
+	for i, p := range d.Remaining {
+		remaining[i] = int(p)
+	}
+	return &protocol.DicePayload{A: d.A, B: d.B, IsDouble: d.IsDouble, Remaining: remaining}
 }
 
 // LegalMovesMessageFor возвращает LEGAL_MOVES-сообщение для игрока color, если
