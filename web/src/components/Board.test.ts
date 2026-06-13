@@ -10,7 +10,8 @@
 // напрямую из стора — это упрощает изоляцию тестов и переиспользование.
 
 import { fireEvent, render, screen } from '@testing-library/svelte'
-import { describe, expect, test, vi } from 'vitest'
+import { tick } from 'svelte'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import type { Move } from '../protocol/messages'
 
@@ -19,6 +20,11 @@ import Board from './Board.svelte'
 function emptyBoard(): number[] {
   return Array(24).fill(0)
 }
+
+// Drag включается по таймеру удержания — нужны фейковые таймеры, чтобы его
+// «домотать». Тап/клик таймер не запускает (или снимает на pointerup).
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => vi.useRealTimers())
 
 describe('Board pieces rendering (#13)', () => {
   test('Board_renders24Points', () => {
@@ -254,12 +260,12 @@ describe('Board bear-off UI (#20b)', () => {
   })
 })
 
-// Жест перетаскивания: нажать на источник и сдвинуть. pointermove активирует
-// drag (в jsdom у синтетического события нет координат → порог считается
-// пройденным). Чистый pointerDown без move — это тап (клик-режим), не drag.
+// Жест перетаскивания: нажать на источник и УДЕРЖАТЬ (домотать таймер). Чистый
+// pointerDown без удержания — это тап (клик-режим), не drag.
 async function dragGesture(source: HTMLElement): Promise<void> {
   await fireEvent.pointerDown(source)
-  await fireEvent.pointerMove(source)
+  vi.advanceTimersByTime(200) // удержание дольше HOLD_MS → берём шашку
+  await tick()
 }
 
 describe('Board drag start (#41)', () => {
@@ -319,6 +325,54 @@ describe('Board drag start (#41)', () => {
 
     expect(screen.queryByTestId('drag-ghost')).toBeNull()
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
+  })
+})
+
+describe('Board hold-to-drag (#41)', () => {
+  test('Board_hold_picksUpAndShowsGhost', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
+
+    await fireEvent.pointerDown(screen.getByTestId('checker-24-0'))
+    vi.advanceTimersByTime(200) // удержали дольше HOLD_MS
+    await tick()
+
+    expect(screen.getByTestId('drag-ghost')).toBeInTheDocument()
+  })
+
+  test('Board_releaseBeforeHold_doesNotPickUp', async () => {
+    const board = emptyBoard()
+    board[23] = 15
+    const onMove = vi.fn()
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove } })
+    const checker = screen.getByTestId('checker-24-0')
+
+    await fireEvent.pointerDown(checker)
+    vi.advanceTimersByTime(100) // меньше HOLD_MS
+    await fireEvent.pointerUp(checker)
+    await tick()
+
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
+    expect(onMove).not.toHaveBeenCalled()
+  })
+
+  test('Board_shortPress_clearedTimer_doesNotPickUpLater', async () => {
+    // регрессия «прилипает к курсору»: отпустили до удержания — таймер снят,
+    // позже шашка не «подхватывается» сама
+    const board = emptyBoard()
+    board[23] = 15
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], onMove: vi.fn() } })
+    const checker = screen.getByTestId('checker-24-0')
+
+    await fireEvent.pointerDown(checker)
+    await fireEvent.pointerUp(checker)
+    vi.advanceTimersByTime(500) // даже если подождать — таймер уже снят
+    await tick()
+
+    expect(screen.queryByTestId('drag-ghost')).toBeNull()
   })
 })
 

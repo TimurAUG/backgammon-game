@@ -4,7 +4,7 @@
   import {
     BAR_WIDTH,
     BAR_X,
-    CHECKER_RADIUS,
+    CHECKER_DIAMETER,
     COLUMN_WIDTH,
     VIEWBOX_HEIGHT,
     VIEWBOX_WIDTH,
@@ -32,22 +32,26 @@
 
   let selectedFrom = $state<number | null>(null)
   // Источник перетаскивания (#41). Отдельно от selectedFrom: drag и клик-режим
-  // не должны мешать друг другу (тап = pointerdown+up без движения порождает
-  // ещё и click). Подсветку ведём по activeFrom — что активно сейчас.
-  // Перетаскивание активируется только после заметного движения (порог) — до
-  // этого pointerdown лишь запоминает кандидата. Тап без движения остаётся
-  // кликом (клик-режим), поэтому клики работают как раньше. #41
+  // не мешают друг другу. Перетаскивание включается по УДЕРЖАНИЮ: короткий
+  // тап/клик не «подхватывает» шашку. pointerdown ставит кандидата и заводит
+  // таймер; держишь дольше HOLD_MS — берём шашку, отпустил раньше — это клик.
   let dragFrom = $state<number | null>(null)
-  let pendingDrag: { point: number; x: number; y: number } | null = null
-  const DRAG_THRESHOLD = 6 // px в экранных координатах
-  // Позиция «летящей» шашки-призрака в координатах viewBox (#44).
-  let dragX = $state(0)
-  let dragY = $state(0)
+  let pendingDrag: { point: number } | null = null
+  let holdTimer: ReturnType<typeof setTimeout> | null = null
+  const HOLD_MS = 180
+  // Позиция и размер призрака в ЭКРАННЫХ координатах: рисуем HTML-оверлеем
+  // (position:fixed) поверх страницы, а не SVG-кружком внутри доски — иначе он
+  // обрезается границей доски и его не дотащить до зоны выкида под доской.
+  let ghostX = $state(0)
+  let ghostY = $state(0)
+  let ghostSize = $state(0)
   // Ссылка на сам <svg>. Через event.currentTarget нельзя: Svelte 5 делегирует
   // pointermove, и там currentTarget — не этот узел (баг найден вживую).
   let boardEl: SVGSVGElement | undefined
-  // id активного указателя — для захвата на доску (touch/боттом-шит, #drag-touch).
+  // id активного указателя — для захвата на доску (touch/боттом-шит).
   let activePointerId: number | null = null
+  // Клик, который браузер шлёт после drag, не должен менять выделение.
+  let suppressClick = false
   const activeFrom = $derived(dragFrom ?? selectedFrom)
 
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
@@ -80,6 +84,11 @@
   }
 
   function handlePointClick(point: number): void {
+    // клик после drag браузер шлёт сам — он не должен трогать выделение
+    if (suppressClick) {
+      suppressClick = false
+      return
+    }
     if (myColor === null) return
     if (selectedFrom !== null && isLegalTarget(point)) {
       commitMove(selectedFrom, point)
@@ -93,54 +102,62 @@
     selectedFrom = null
   }
 
-  // Drag&drop (#41–#42). pointerdown лишь запоминает кандидата; drag стартует
-  // в moveDrag по порогу движения (тап без движения остаётся кликом).
+  // Drag&drop (#41–#42). pointerdown ставит кандидата и заводит таймер
+  // удержания; шашку «берём» только когда таймер сработал. Короткий тап →
+  // таймер снят на pointerup → обычный клик.
   function startDrag(point: number, event: PointerEvent): void {
+    suppressClick = false
+    clearHoldTimer()
     if (myColor === null || !isMyChecker(point)) {
       pendingDrag = null
       return
     }
-    pendingDrag = { point, x: event.clientX, y: event.clientY }
+    pendingDrag = { point }
     activePointerId = event.pointerId
+    ghostX = event.clientX
+    ghostY = event.clientY
+    holdTimer = setTimeout(activateDrag, HOLD_MS)
   }
 
-  // Призрак следует за курсором. Drag активируется здесь — после движения за
-  // порог. При активации захватываем указатель на доску: события идут к нам, а
-  // не к скролл-контейнеру/боттом-шиту, и на touch снимается неявный захват на
-  // исходную шашку (тогда drop-цель берём по координатам). screen→viewBox через
-  // CTM; в jsdom getScreenCTM/координат нет → порог пройден, позицию не двигаем.
-  function moveDrag(event: PointerEvent): void {
-    if (dragFrom === null) {
-      if (pendingDrag === null) return
-      const hasCoords =
-        typeof event.clientX === 'number' && typeof pendingDrag.x === 'number'
-      if (hasCoords) {
-        const moved = Math.hypot(event.clientX - pendingDrag.x, event.clientY - pendingDrag.y)
-        if (moved < DRAG_THRESHOLD) return
-      }
-      dragFrom = pendingDrag.point
-      boardEl?.setPointerCapture?.(event.pointerId)
+  // Срабатывает по удержанию: «берём» шашку. Захватываем указатель на доску —
+  // события идут к нам (не в скролл/боттом-шит), на touch снимается неявный
+  // захват на исходную шашку (drop-цель берём по координатам отпускания).
+  function activateDrag(): void {
+    holdTimer = null
+    if (pendingDrag === null) return
+    dragFrom = pendingDrag.point
+    const rect = boardEl?.getBoundingClientRect()
+    ghostSize =
+      rect && rect.width > 0 ? CHECKER_DIAMETER * (rect.width / VIEWBOX_WIDTH) : CHECKER_DIAMETER
+    if (activePointerId !== null) boardEl?.setPointerCapture?.(activePointerId)
+  }
+
+  function clearHoldTimer(): void {
+    if (holdTimer !== null) {
+      clearTimeout(holdTimer)
+      holdTimer = null
     }
-    const ctm = boardEl?.getScreenCTM?.()
-    if (!ctm) return
-    const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
-    dragX = local.x
-    dragY = local.y
   }
 
-  // Завершение жеста (pointerup/pointercancel). На touch pointerup приходит на
-  // исходную шашку (неявный захват), поэтому цель определяем по координатам
-  // отпускания через elementFromPoint, а не по event.target. В jsdom
-  // elementFromPoint даёт null → fallback на target (тесты шлют up на цель).
+  // Призрак следует за указателем (экранные координаты — для HTML-оверлея).
+  function moveDrag(event: PointerEvent): void {
+    ghostX = event.clientX
+    ghostY = event.clientY
+  }
+
+  // Завершение жеста (pointerup/pointercancel). Не дотащили до удержания → клик.
+  // Иначе цель определяем по координатам отпускания (elementFromPoint): на touch
+  // pointerup приходит на исходную шашку. Нет легальной цели → вернуть на место.
   function endDrag(event: PointerEvent): void {
+    clearHoldTimer()
     pendingDrag = null
     if (dragFrom === null) {
       activePointerId = null
-      return // тап без движения → разберётся клик-режим
+      return
     }
     const from = dragFrom
+    suppressClick = true
     const point = resolveDropPoint(event)
-    releaseCapture()
     if (point !== null && isLegalTarget(point)) commitMove(from, point)
     else cancelDrag()
   }
@@ -169,10 +186,10 @@
     activePointerId = null
   }
 
-  // Отмена перетаскивания (pointerup вне цели / pointercancel). selectedFrom НЕ
-  // трогаем — иначе тап по выделенной шашке снимал бы выбор раньше click и
-  // ломал отмену повторным кликом.
+  // Отмена перетаскивания (отпустили вне цели / pointercancel) — шашка остаётся
+  // на месте. selectedFrom НЕ трогаем (клик-режим отдельно).
   function cancelDrag(): void {
+    clearHoldTimer()
     pendingDrag = null
     dragFrom = null
     releaseCapture()
@@ -181,6 +198,7 @@
   // Завершение хода из любого режима (клик или drag): сброс выбора и
   // перетаскивания + onMove. Источник правды — сервер, ждём STATE.
   function commitMove(from: number, to: number): void {
+    clearHoldTimer()
     pendingDrag = null
     dragFrom = null
     selectedFrom = null
@@ -189,18 +207,24 @@
   }
 
   // Завершение жеста слушаем на window: на touch с захватом pointerup приходит
-  // не на цель, а bear-off-зона вообще вне <svg> — глобальный слушатель ловит
-  // отпускание где угодно. Активен только пока тащим (проверка внутри).
+  // не на цель, а зона выкида вообще вне <svg> — глобальный слушатель ловит
+  // отпускание где угодно. Если отпустили ДО удержания — снимаем таймер (иначе
+  // шашка «подхватилась» бы уже после отпускания). Таймер чистим и на unmount.
   $effect(() => {
     const onUp = (e: PointerEvent) => {
-      if (dragFrom !== null) endDrag(e)
+      if (dragFrom !== null) {
+        endDrag(e)
+      } else {
+        clearHoldTimer()
+        pendingDrag = null
+        activePointerId = null
+      }
     }
-    const onCancel = () => {
-      if (dragFrom !== null) cancelDrag()
-    }
+    const onCancel = () => cancelDrag()
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
     return () => {
+      clearHoldTimer()
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
     }
@@ -262,19 +286,6 @@
       />
     {/each}
   {/each}
-
-  {#if dragFrom !== null}
-    <!-- Летящая шашка-призрак (#44). pointer-events=none — чтобы не перехватывать
-         pointerup у цели под курсором. -->
-    <circle
-      class="checker {myColor === 'white' ? 'white' : 'black'} drag-ghost"
-      data-testid="drag-ghost"
-      cx={dragX}
-      cy={dragY}
-      r={CHECKER_RADIUS}
-      pointer-events="none"
-    />
-  {/if}
 </svg>
 
 {#if dragBearOffAvailable}
@@ -286,6 +297,17 @@
   <button type="button" class="bear-off" data-testid="bear-off" onclick={handleBearOff}>
     Сбросить шашку →
   </button>
+{/if}
+
+{#if dragFrom !== null}
+  <!-- Призрак-шашка следует за указателем. HTML-оверлей (position:fixed) поверх
+       всей страницы — виден и за пределами доски (до зоны выкида под ней).
+       pointer-events:none — не перехватывает отпускание у цели под пальцем. -->
+  <div
+    class="drag-ghost {myColor === 'white' ? 'white' : 'black'}"
+    data-testid="drag-ghost"
+    style="left: {ghostX}px; top: {ghostY}px; width: {ghostSize}px; height: {ghostSize}px;"
+  ></div>
 {/if}
 
 <style>
@@ -357,8 +379,23 @@
   .bear-off:hover {
     background: #9ccc65;
   }
+  /* Призрак — HTML-оверлей поверх всей страницы (виден за пределами доски). */
   .drag-ghost {
-    opacity: 0.75;
+    position: fixed;
+    z-index: 1000;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0.85;
+    box-sizing: border-box;
+  }
+  .drag-ghost.white {
+    background: #f4ece1;
+    border: 2px solid #2a1e10;
+  }
+  .drag-ghost.black {
+    background: #2a1e10;
+    border: 2px solid #f4ece1;
   }
   .bear-off-drop {
     display: block;
