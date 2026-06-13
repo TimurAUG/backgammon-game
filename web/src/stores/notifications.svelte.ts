@@ -4,7 +4,7 @@
 // Модульный $state-объект, как gameState/connection: единственная мутация —
 // через push/dismiss/reset.
 
-export type NotificationKind = 'opponentJoined' | 'yourRoll' | 'chat'
+export type NotificationKind = 'opponentJoined' | 'yourRoll' | 'chat' | 'turnSkipped'
 
 export interface Notification {
   id: number

@@ -70,6 +70,21 @@ describe('parseServerMessage', () => {
     expect(msg.moves[0]).toEqual({ from: 24, to: 18, pip: 6 })
   })
 
+  test('parseServerMessage_TURN_SKIPPED_keepsColorAndDice', () => {
+    const raw = JSON.stringify({
+      type: 'TURN_SKIPPED',
+      color: 'white',
+      dice: { a: 1, b: 2, isDouble: false, remaining: [1, 2] },
+    })
+
+    const msg = parseServerMessage(raw)
+    expect(msg.type).toBe('TURN_SKIPPED')
+    if (msg.type !== 'TURN_SKIPPED') return
+    expect(msg.color).toBe('white')
+    expect(msg.dice.a).toBe(1)
+    expect(msg.dice.b).toBe(2)
+  })
+
   test('parseServerMessage_OPPONENT_JOINED_keepsName', () => {
     const msg = parseServerMessage('{"type":"OPPONENT_JOINED","name":"Тимур"}')
     expect(msg.type).toBe('OPPONENT_JOINED')

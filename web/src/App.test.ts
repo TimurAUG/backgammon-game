@@ -277,6 +277,46 @@ describe('App opponent-joined notification (#34a)', () => {
   })
 })
 
+describe('App turn-skipped notification', () => {
+  test('App_myTurnSkipped_showsDiceAndPassNotice', async () => {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+
+    ws.receive({
+      type: 'TURN_SKIPPED',
+      color: 'white',
+      dice: { a: 1, b: 2, isDouble: false, remaining: [1, 2] },
+    })
+
+    // мой ход пропущен: показаны кубики 1 и 2 + что ходить нечем
+    expect(
+      await screen.findByText((t) => t.includes('1') && t.includes('2') && t.includes('нечем')),
+    ).toBeInTheDocument()
+  })
+
+  test('App_opponentTurnSkipped_showsItIsMyTurn', async () => {
+    render(App, { props: { createClient: testCreateClient } })
+    await connectVia('g-1', 'tok')
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+
+    ws.receive({
+      type: 'TURN_SKIPPED',
+      color: 'black',
+      dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
+    })
+
+    // ход соперника пропущен → сообщаем, что теперь ваш ход
+    expect(await screen.findByText((t) => t.includes('ваш ход'))).toBeInTheDocument()
+  })
+})
+
 describe('App chat (#40)', () => {
   async function connectedSocket(myColor: 'white' | 'black' = 'white'): Promise<MockWebSocket> {
     render(App, { props: { createClient: testCreateClient } })

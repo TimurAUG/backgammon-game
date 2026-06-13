@@ -53,6 +53,17 @@
     if (msg.type === 'OPPONENT_JOINED') {
       pushNotification('opponentJoined', 'Соперник присоединился')
     }
+    if (msg.type === 'TURN_SKIPPED') {
+      // Объясняем «молчаливый» авто-пропуск: выпали кубики, но ходить нечем,
+      // ход перешёл. Кубики берём из сообщения (в STATE их уже сбросили).
+      const dice = `${msg.dice.a} и ${msg.dice.b}`
+      const text =
+        msg.color === gameState.myColor
+          ? `Выпало ${dice} — ходить нечем, ход переходит сопернику`
+          : `Сопернику выпало ${dice} — ходить нечем, ваш ход`
+      pushNotification('turnSkipped', text)
+      return
+    }
     if (msg.type === 'CHAT') {
       applyChat({ sender: msg.sender, text: msg.text })
       // Тост — только на чужое сообщение и только когда панель свёрнута:
