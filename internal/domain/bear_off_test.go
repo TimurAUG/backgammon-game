@@ -120,6 +120,32 @@ func TestIsLegalBearOff_OverpipFromFarthest(t *testing.T) {
 			color: Black, from: 14, pip: 6,
 			want: false,
 		},
+		{
+			// Регресс: дальняя шашка ВЫШЕ точного пункта пипса (на 6 при пипсе 4).
+			// Переборным пипсом надо ходить ей (6→2), а не выкидывать с 1.
+			name: "белые: шашки на 1 и 6, пипс 4 (на 6 дальняя, выше exact=4) → выкид с 1 нелегален",
+			setup: func(b *Board) {
+				b[0], b[5] = 2, 13
+			},
+			color: White, from: 1, pip: 4,
+			want: false,
+		},
+		{
+			name: "белые: шашки только на 1, пипс 4 (выше пусто) → переборный выкид с 1 легален",
+			setup: func(b *Board) {
+				b[0] = 2
+			},
+			color: White, from: 1, pip: 4,
+			want: true,
+		},
+		{
+			name: "чёрные: шашки на 13 и 18, пипс 4 (на 18 дальняя, выше exact=16) → выкид с 13 нелегален",
+			setup: func(b *Board) {
+				b[12], b[17] = -2, -13
+			},
+			color: Black, from: 13, pip: 4,
+			want: false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
