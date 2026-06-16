@@ -247,57 +247,65 @@
   )
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<svg
-  bind:this={boardEl}
-  class="board"
-  viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-  xmlns="http://www.w3.org/2000/svg"
-  onpointermove={moveDrag}
->
-  <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
-  {#each POINTS as point (point)}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <polygon
-      class="point {point % 2 === 0 ? 'even' : 'odd'}"
-      class:selected={selectedFrom === point || dragFrom === point}
-      class:legal-target={isLegalTarget(point)}
-      data-testid="point-{point}"
-      points={trianglePoints(point, flipped)}
-      onclick={() => handlePointClick(point)}
-      onpointerdown={(e) => startDrag(point, e)}
-    />
-  {/each}
-
-  {#each POINTS as point (point)}
-    {#each Array.from({ length: checkerCount(point) }, (_, j) => j) as j (j)}
-      {@const pos = checkerAt(point, j, checkerCount(point), flipped)}
+<div class="board-area">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <svg
+    bind:this={boardEl}
+    class="board"
+    viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
+    xmlns="http://www.w3.org/2000/svg"
+    onpointermove={moveDrag}
+  >
+    <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
+    {#each POINTS as point (point)}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <circle
-        class="checker {checkerColor(point)}"
-        data-testid="checker-{point}-{j}"
-        cx={pos.cx}
-        cy={pos.cy}
-        r={pos.r}
+      <polygon
+        class="point {point % 2 === 0 ? 'even' : 'odd'}"
+        class:selected={selectedFrom === point || dragFrom === point}
+        class:legal-target={isLegalTarget(point)}
+        data-testid="point-{point}"
+        points={trianglePoints(point, flipped)}
         onclick={() => handlePointClick(point)}
         onpointerdown={(e) => startDrag(point, e)}
       />
     {/each}
-  {/each}
-</svg>
 
-{#if dragBearOffAvailable}
-  <!-- Drop-цель резолвится по координатам отпускания (endDrag), не обработчиком. -->
-  <div class="bear-off-drop" data-testid="bear-off-drop">Брось сюда, чтобы сбросить →</div>
-{/if}
+    {#each POINTS as point (point)}
+      {#each Array.from({ length: checkerCount(point) }, (_, j) => j) as j (j)}
+        {@const pos = checkerAt(point, j, checkerCount(point), flipped)}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <circle
+          class="checker {checkerColor(point)}"
+          data-testid="checker-{point}-{j}"
+          cx={pos.cx}
+          cy={pos.cy}
+          r={pos.r}
+          onclick={() => handlePointClick(point)}
+          onpointerdown={(e) => startDrag(point, e)}
+        />
+      {/each}
+    {/each}
+  </svg>
 
-{#if bearOffAvailable}
-  <button type="button" class="bear-off" data-testid="bear-off" onclick={handleBearOff}>
-    Сбросить шашку →
-  </button>
-{/if}
+  <!-- Зона выкида. Позиция — через CSS: десктоп (≥1024px) слева от доски,
+       мобила — оверлеем на доске по центру. Drag-режим показывает drop-цель
+       (резолвится по координатам отпускания в endDrag, не обработчиком),
+       клик-режим — кнопку. И то и другое — в одном месте по запросу. -->
+  {#if dragBearOffAvailable || bearOffAvailable}
+    <div class="bear-off-zone">
+      {#if dragBearOffAvailable}
+        <div class="bear-off-drop" data-testid="bear-off-drop">Сбросить сюда</div>
+      {/if}
+      {#if bearOffAvailable}
+        <button type="button" class="bear-off" data-testid="bear-off" onclick={handleBearOff}>
+          Сбросить шашку
+        </button>
+      {/if}
+    </div>
+  {/if}
+</div>
 
 {#if dragFrom !== null}
   <!-- Призрак-шашка следует за указателем. HTML-оверлей (position:fixed) поверх
@@ -311,6 +319,10 @@
 {/if}
 
 <style>
+  .board-area {
+    /* Контекст позиционирования для зоны выкида (абсолютный оверлей). */
+    position: relative;
+  }
   .board {
     display: block;
     width: 100%;
@@ -364,14 +376,40 @@
     stroke: #f4ece1;
     stroke-width: 2;
   }
+  .bear-off-zone {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    border-radius: 6px;
+    box-shadow: 0 2px 12px rgba(42, 30, 16, 0.4);
+    /* Мобила (по умолчанию): на доске, примерно в середине. */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: max-content;
+    max-width: 70%;
+  }
+  @media (min-width: 1024px) {
+    /* Десктоп: слева от доски, у верхнего края. */
+    .bear-off-zone {
+      top: 0.5rem;
+      right: calc(100% + 1rem);
+      left: auto;
+      bottom: auto;
+      transform: none;
+      width: 150px;
+      max-width: none;
+    }
+  }
   .bear-off {
-    display: block;
-    margin: 0.5rem auto 0;
     background: #aed581;
     color: #1b5e20;
     border: 2px solid #2e7d32;
     border-radius: 6px;
-    padding: 0.5rem 1rem;
+    padding: 0.6rem 1rem;
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
@@ -398,9 +436,6 @@
     border: 2px solid #f4ece1;
   }
   .bear-off-drop {
-    display: block;
-    margin: 0.5rem auto 0;
-    max-width: 760px;
     background: #aed581;
     color: #1b5e20;
     border: 2px dashed #2e7d32;
