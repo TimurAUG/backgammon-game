@@ -2,11 +2,14 @@
 // FRONTEND_SPEC #38 — ввод + отправка (Enter/кнопка) → onAction CHAT, очистка;
 //                     пустое/пробельное не шлётся.
 // FRONTEND_SPEC #39 — сворачивание + бейдж непрочитанных.
+// FRONTEND_SPEC #45 — автоскролл ленты к последнему сообщению (новое сообщение
+//                     и разворот панели).
 //
 // Chat — UI поверх стора chat: лента из chat.messages, отправка через onAction.
 
 import { fireEvent, render, screen } from '@testing-library/svelte'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { flushSync } from 'svelte'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { applyChat, chat, resetChat, setChatOpen } from '../stores/chat.svelte'
 
@@ -14,6 +17,10 @@ import Chat from './Chat.svelte'
 
 beforeEach(() => {
   resetChat()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('Chat messages (#37)', () => {
@@ -122,5 +129,37 @@ describe('Chat collapse + unread badge (#39)', () => {
     await fireEvent.click(screen.getByTestId('chat-close'))
 
     expect(chat.open).toBe(false)
+  })
+})
+
+describe('Chat autoscroll (#45)', () => {
+  // jsdom не делает layout: scrollHeight всегда 0. Мокаем геттер, чтобы «низ
+  // ленты» был ненулевым и автоскролл был наблюдаем через scrollTop (его jsdom
+  // хранит как обычное свойство). Без реализации scrollTop остаётся 0 — тест падает.
+  test('Chat_newMessage_scrollsListToBottom', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1000)
+    setChatOpen(true)
+    render(Chat, { props: { myColor: 'white', onAction: vi.fn() } })
+
+    const list = screen.getByRole('list')
+    list.scrollTop = 0 // до нового сообщения лента не прокручена к низу
+
+    applyChat({ sender: 'black', text: 'свежее' })
+    flushSync()
+
+    expect(list.scrollTop, 'лента прокручена к низу (scrollHeight) после нового сообщения').toBe(
+      1000,
+    )
+  })
+
+  test('Chat_openPanel_scrollsListToBottom', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1000)
+    applyChat({ sender: 'black', text: 'пришло пока чат был свёрнут' })
+    render(Chat, { props: { myColor: 'white', onAction: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('chat-toggle'))
+
+    const list = screen.getByRole('list')
+    expect(list.scrollTop, 'при развороте панели лента сразу прокручена к низу').toBe(1000)
   })
 })

@@ -202,6 +202,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 38. `components/Chat.svelte`: поле ввода + отправка (Enter/кнопка) → `onAction({type:'CHAT', text})`, поле очищается; пустое/пробельное не шлётся.
 39. `components/Chat.svelte`: сворачивание (кнопка-иконка) + бейдж `unread`; разворот зовёт `setChatOpen(true)`.
 40. Проводка: `App` маршрутизирует `CHAT`→`applyChat` (+тост при закрытой панели), `CHAT_HISTORY`→`applyChatHistory`, `resetChat` в `endSession`; `NotificationKind += 'chat'`; `Game` рендерит `<Chat>`.
+45. (session-добавка) `components/Chat.svelte`: автоскролл ленты к последнему сообщению — на новое сообщение и при развороте панели (`$effect` + `bind:this`, `scrollTop = scrollHeight`); скроллится только лента, не страница.
 
 ### Этап 15 — drag&drop шашек
 
