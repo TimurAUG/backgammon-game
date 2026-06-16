@@ -21,9 +21,8 @@ import (
 // Поддерживает:
 //   - JOIN: регистрация в менеджере, ответ STATE, нотификация соперника
 //     OPPONENT_JOINED, переход в read-loop.
-//   - ROLL_FOR_FIRST: сигнал готовности на определение первого хода.
-//
-// ROLL / MOVE / END_TURN / RESIGN — в следующих циклах #34+.
+//   - в read-loop: ROLL_FOR_FIRST, ROLL, MOVE, END_TURN, RESIGN, CHAT
+//     (диспатч в game.Game; ошибки маппятся в ERROR-коды протокола).
 type Handler struct {
 	mgr *game.Manager
 	// OriginPatterns — разрешённые Origin (паттерны coder/websocket). Пусто →
@@ -169,6 +168,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Type: "ERROR", Code: code, Message: err.Error(),
 				})
 			}
+		case "RESIGN":
+			// Сдача завершает партию: победитель — соперник, кокс (3 очка).
+			// Очередь не важна — сдаться можно в любой момент. Ошибок нет.
+			g.Resign(color)
 		case "CHAT":
 			// Чат — relay поверх транспорта: домена не касается, валидацию и
 			// рассылку обоим делает game.PostChat. Отправитель — цвет слота.

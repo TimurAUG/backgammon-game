@@ -63,9 +63,9 @@ func TestHandler_CrossOrigin_AllowedWhenConfigured(t *testing.T) {
 }
 
 // TestHandler_JoinReturnsState — интеграционный тест на минимальный поток:
-//   1. Клиент открывает WS-соединение.
-//   2. Шлёт JOIN с gameId.
-//   3. Получает STATE с начальной доской.
+//  1. Клиент открывает WS-соединение.
+//  2. Шлёт JOIN с gameId.
+//  3. Получает STATE с начальной доской.
 //
 // TDD plan #33.
 func TestHandler_JoinReturnsState(t *testing.T) {
@@ -863,4 +863,41 @@ func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
 	require.Len(t, hist.Chat, 1)
 	require.Equal(t, "white", hist.Chat[0].Sender)
 	require.Equal(t, "до связи", hist.Chat[0].Text)
+}
+
+// TestHandler_Resign_BroadcastsGameOverKoks — клиент шлёт RESIGN; сервер
+// завершает партию и рассылает обоим STATE(finished) + GAME_OVER с победой
+// соперника и коксом. Регрессия: RESIGN не диспатчился (падал в default →
+// ERROR «unsupported message»), кнопка «Сдаться» не работала.
+func TestHandler_Resign_BroadcastsGameOverKoks(t *testing.T) {
+	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoin(t, ctx, wsURL, "g1") // white
+	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn1)            // STATE при JOIN
+	conn2 := dialAndJoin(t, ctx, wsURL, "g1") // black
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2) // STATE при JOIN
+	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+
+	resign, err := json.Marshal(protocol.ClientMessage{Type: "RESIGN"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, resign))
+
+	// Оба получают STATE(finished), затем GAME_OVER{winner=black, kind=koks}.
+	for _, conn := range []*websocket.Conn{conn1, conn2} {
+		state := readMessage(t, ctx, conn)
+		require.Equal(t, "STATE", state.Type)
+		require.Equal(t, "finished", state.Status, "после сдачи статус — finished")
+		over := readMessage(t, ctx, conn)
+		require.Equal(t, "GAME_OVER", over.Type)
+		require.Equal(t, "black", over.Winner, "побеждает соперник сдавшегося (white)")
+		require.Equal(t, "koks", over.Kind, "сдача = поражение с коксом")
+	}
 }

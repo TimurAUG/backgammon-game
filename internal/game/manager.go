@@ -300,6 +300,33 @@ func (g *Game) EndTurn(c domain.Color) error {
 	return nil
 }
 
+// Resign — игрок цвета c сдаётся. По правилам проекта сдача = поражение с
+// коксом (3 очка) НЕЗАВИСИМО от позиции на доске: победитель — соперник,
+// kind = Koks. Допустима в любой момент незавершённой партии (в т.ч. в чужой
+// ход — сдаться можно когда угодно), очередь не проверяется. На уже завершённой
+// партии — no-op (идемпотентно).
+//
+// Рассылает обоим STATE(finished) + GAME_OVER — как обычное завершение партии
+// в HandleMove. Источник правды о завершении — Status.
+func (g *Game) Resign(c domain.Color) {
+	g.mu.Lock()
+	defer g.maybePersist()
+	defer g.mu.Unlock()
+
+	if g.State.Status == domain.StatusFinished {
+		return
+	}
+
+	winner := domain.Black
+	if c == domain.Black {
+		winner = domain.White
+	}
+
+	g.State.Status = domain.StatusFinished
+	g.broadcastStateLocked()
+	g.broadcastGameOverLocked(winner, domain.Koks)
+}
+
 // RollForFirst обрабатывает сигнал «готов» от игрока c в фазе определения
 // первого хода.
 //

@@ -192,3 +192,45 @@ func TestGame_Roll_FirstMoveDoubleSix_NotSkipped(t *testing.T) {
 	require.Contains(t, legal.Moves, protocol.MovePayload{From: 24, To: 18, Pip: 6},
 		"единственный первый шаг дубля 6:6 — снять шашку с головы 24→18")
 }
+
+// TestGame_Resign_OpponentWinsKoks — игрок сдаётся: партия завершается, побеждает
+// соперник с коксом (3 очка) независимо от позиции на доске. Оба игрока получают
+// GAME_OVER, Status → Finished. Очередь не проверяется — сдаться можно в любой
+// момент. Регрессия: RESIGN не был реализован вовсе (кнопка «Сдаться» молчала).
+func TestGame_Resign_OpponentWinsKoks(t *testing.T) {
+	cases := []struct {
+		name     string
+		resigner domain.Color
+		wantWin  string
+	}{
+		{"белый сдаётся → побеждает чёрный", domain.White, "black"},
+		{"чёрный сдаётся → побеждает белый", domain.Black, "white"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
+			white := &mockConn{}
+			black := &mockConn{}
+			_, _, err := mgr.JoinGame("g1", "tok-w", white)
+			require.NoError(t, err)
+			_, g, err := mgr.JoinGame("g1", "tok-b", black)
+			require.NoError(t, err)
+
+			g.State = domain.GameState{
+				Board:  domain.InitialBoard(),
+				Turn:   domain.White,
+				Status: domain.StatusWaitingForMove,
+			}
+
+			g.Resign(tc.resigner)
+
+			require.Equal(t, domain.StatusFinished, g.State.Status, "партия должна завершиться")
+			for _, conn := range []*mockConn{white, black} {
+				over := findMessage(conn.Messages(), "GAME_OVER")
+				require.NotNil(t, over, "оба игрока получают GAME_OVER")
+				require.Equal(t, tc.wantWin, over.Winner, "побеждает соперник сдавшегося")
+				require.Equal(t, "koks", over.Kind, "сдача = поражение с коксом")
+			}
+		})
+	}
+}
