@@ -11,6 +11,23 @@
 
   let draft = $state('')
 
+  // Ссылка на ленту сообщений для автоскролла. $state (не обычный let), чтобы
+  // $effect перезапускался, когда разворот панели заново создаёт <ul> и
+  // присваивает messagesEl.
+  let messagesEl = $state<HTMLUListElement | undefined>(undefined)
+
+  // Автоскролл: прокручиваем ленту к низу при новом сообщении и при развороте
+  // панели — свежее сообщение видно сразу, без ручного скролла. Зависимости
+  // эффекта: chat.messages.length (новое сообщение) и messagesEl (разворот).
+  // Скроллится только лента (overflow-y), не страница.
+  $effect(() => {
+    const el = messagesEl
+    const count = chat.messages.length
+    if (el && count > 0) {
+      el.scrollTop = el.scrollHeight
+    }
+  })
+
   function colorLabel(c: Color): string {
     return c === 'white' ? 'Белые' : 'Чёрные'
   }
@@ -55,7 +72,7 @@
         ×
       </button>
     </header>
-    <ul class="messages">
+    <ul class="messages" bind:this={messagesEl}>
       {#each chat.messages as m, i (i)}
         <li class="msg" class:mine={m.sender === myColor} data-testid="chat-message">
           <span class="who">{colorLabel(m.sender)}</span>
