@@ -157,7 +157,7 @@ func TestLegalMoves(t *testing.T) {
 			setup: func() GameState {
 				var b Board
 				b[6], b[7], b[8], b[9], b[10] = 1, 1, 1, 1, 1 // белые 7..11
-				b[12] = 1                                       // белая на 13
+				b[12] = 1                                     // белая на 13
 				return GameState{
 					Board:       b,
 					Turn:        White,
@@ -201,6 +201,43 @@ func TestLegalMoves(t *testing.T) {
 			s := tc.setup()
 			moves := LegalMoves(s)
 			require.ElementsMatch(t, tc.want, moves)
+		})
+	}
+}
+
+// TestLegalMoves_FirstMoveDoubleSix_PlayableFromHead — регрессия бага: на самом
+// первом ходу партии дубль 6:6 ошибочно пропускался как «нет ходов», хотя с
+// головы можно снять две шашки (исключение головы). С чистого старта все 15
+// шашек на голове, единственный кандидат — снять с головы (белые 24→18,
+// чёрные 12→6). Дальше шестёрки упираются: 18→12 (соответственно 6→24) закрыты
+// головой соперника, а голова после двух снятий — правилом головы. Это
+// легальный тупик, ход НЕ должен отбраковываться целиком.
+//
+// Причина бага: canReachLegalFinal определял терминал через CanUsePip, который
+// намеренно игнорирует правило головы → тупик «осталась только голова, но она
+// закрыта правилом» считался «ещё есть ход» и SixBlockAllowed в нём не
+// проверялся → вся ветка возвращала false → LegalMoves пуст → авто-пропуск.
+func TestLegalMoves_FirstMoveDoubleSix_PlayableFromHead(t *testing.T) {
+	cases := []struct {
+		name string
+		turn Color
+		want []Move
+	}{
+		{"белые: 24→18", White, []Move{{From: 24, To: 18, Pip: 6}}},
+		{"чёрные: 12→6", Black, []Move{{From: 12, To: 6, Pip: 6}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := GameState{
+				Board:        InitialBoard(),
+				Turn:         tc.turn,
+				Dice:         NewDice(6, 6),
+				HeadConsumed: [2]uint8{0, 0},
+				IsFirstMove:  [2]bool{true, true},
+			}
+			moves := LegalMoves(s)
+			require.ElementsMatch(t, tc.want, moves,
+				"первый ход 6:6 должен быть играбелен с головы, а не пропущен как «нет ходов»")
 		})
 	}
 }

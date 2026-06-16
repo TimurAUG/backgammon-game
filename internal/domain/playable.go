@@ -129,17 +129,24 @@ func candidateMoves(s GameState) []Move {
 // ходов цвета blocker (исходный Turn до старта рекурсии), приводящая к
 // финальной позиции, проходящей SixBlockAllowed.
 //
-// Финал — когда либо Dice.Remaining пуст, либо ни один из оставшихся пипсов
-// не используется (CanUsePip == false для всех). В этом случае возвращается
-// SixBlockAllowed(Board, blocker).
+// Финал — когда нет ни одного хода-кандидата (candidateMoves пуст). В этом
+// случае возвращается SixBlockAllowed(Board, blocker). Иначе перебираются все
+// candidateMoves и рекурсивно проверяется каждый; достаточно одной успешной
+// ветки.
 //
-// Иначе перебираются все candidateMoves и рекурсивно проверяется каждый;
-// достаточно одной успешной ветки.
+// Терминал определяется именно через candidateMoves (а не CanUsePip), потому
+// что candidateMoves учитывает И базовые правила, И правило головы. Тупик
+// «осталась только голова, но она закрыта правилом головы» — это конец хода, и
+// его финальную позицию надо оценить SixBlockAllowed. Раньше терминал считался
+// через CanUsePip, который правило головы игнорирует: такой тупик ошибочно
+// считался «ход ещё есть», SixBlockAllowed в нём не проверялся, и вся ветка
+// возвращала false → легальный первый ход 6:6 отбраковывался как «нет ходов».
 func canReachLegalFinal(s GameState, blocker Color) bool {
-	if isTerminal(s) {
+	cands := candidateMoves(s)
+	if len(cands) == 0 {
 		return SixBlockAllowed(s.Board, blocker)
 	}
-	for _, m := range candidateMoves(s) {
+	for _, m := range cands {
 		ns, err := Apply(s, m)
 		if err != nil {
 			continue
@@ -149,18 +156,4 @@ func canReachLegalFinal(s GameState, blocker Color) bool {
 		}
 	}
 	return false
-}
-
-// isTerminal — true, если хода больше нет: Remaining пуст или ни один пипс
-// не используется.
-func isTerminal(s GameState) bool {
-	if len(s.Dice.Remaining) == 0 {
-		return true
-	}
-	for _, pip := range s.Dice.Remaining {
-		if CanUsePip(s.Board, s.Turn, pip) {
-			return false
-		}
-	}
-	return true
 }

@@ -217,3 +217,27 @@ func TestIsTurnComplete(t *testing.T) {
 		})
 	}
 }
+
+// TestIsTurnComplete_HeadBlockedLeftoverPip_Complete — регрессия: если
+// оставшиеся пипсы «используемы» лишь с головы, но правило головы это
+// запрещает (а других ходов нет), ход завершён. Иначе игрок застревает: ходить
+// нечем, а END_TURN отклоняется (ErrMustUsePip), т.к. IsTurnComplete=false.
+//
+// Сцена первого хода: белые дублем 6:6 сняли две шашки с головы на 18
+// (исключение), но 18→12 закрыт головой чёрных, а голова закрыта правилом.
+// Тот же корень, что у бага LegalMoves: CanUsePip игнорирует правило головы.
+func TestIsTurnComplete_HeadBlockedLeftoverPip_Complete(t *testing.T) {
+	var b Board
+	b[23] = 13  // 13 белых на голове (24)
+	b[17] = 2   // 2 белых на 18 (сняты с головы этим ходом)
+	b[11] = -15 // 15 чёрных на голове (12) — закрывают 18→12
+	s := GameState{
+		Board:        b,
+		Turn:         White,
+		Dice:         Dice{A: 6, B: 6, IsDouble: true, Remaining: []uint8{6, 6}},
+		HeadConsumed: [2]uint8{2, 0},
+		IsFirstMove:  [2]bool{true, true},
+	}
+	require.True(t, IsTurnComplete(s),
+		"ходить нечем (голова закрыта правилом, 18→12 закрыт соперником) → ход завершён")
+}

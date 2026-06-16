@@ -82,7 +82,7 @@ func TestGame_HandleMove_TriggersGameOverMars(t *testing.T) {
 	require.NoError(t, err)
 
 	var b domain.Board
-	b[0] = 1   // 1 белая на пункте 1 (последняя, всё остальное уже выкинуто)
+	b[0] = 1    // 1 белая на пункте 1 (последняя, всё остальное уже выкинуто)
 	b[11] = -10 // 10 чёрных на пункте 12 (вне дома белых и не на 24)
 
 	g.State = domain.GameState{
@@ -159,4 +159,36 @@ func TestGame_Roll_NoLegalMoves_BroadcastsTurnSkipped(t *testing.T) {
 
 	require.NotNil(t, findMessage(black.Messages(), "TURN_SKIPPED"),
 		"соперник тоже получает TURN_SKIPPED — узнаёт, что ход перешёл к нему")
+}
+
+// TestGame_Roll_FirstMoveDoubleSix_NotSkipped — регрессия бага: на самом первом
+// ходу партии дубль 6:6 ошибочно авто-пропускался как «нет ходов» (TURN_SKIPPED).
+// На деле с головы можно снять две шашки (исключение головы 6:6/4:4/3:3), и ход
+// обязан играться. Проверяем сквозь Roll: белым приходит LEGAL_MOVES (24→18),
+// а TURN_SKIPPED — нет.
+func TestGame_Roll_FirstMoveDoubleSix_NotSkipped(t *testing.T) {
+	// rng-байты [5,5] → кубики (6,6): RollOne(5) == 5%6+1 == 6.
+	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{5, 5}))
+	white := &mockConn{}
+	black := &mockConn{}
+	_, _, err := mgr.JoinGame("g1", "tok-w", white)
+	require.NoError(t, err)
+	_, g, err := mgr.JoinGame("g1", "tok-b", black)
+	require.NoError(t, err)
+
+	g.State = domain.GameState{
+		Board:       domain.InitialBoard(),
+		Turn:        domain.White,
+		Status:      domain.StatusWaitingForRoll,
+		IsFirstMove: [2]bool{true, true},
+	}
+
+	require.NoError(t, g.Roll(domain.White))
+
+	require.Nil(t, findMessage(white.Messages(), "TURN_SKIPPED"),
+		"первый ход 6:6 не должен пропускаться — с головы снимаются две шашки")
+	legal := findMessage(white.Messages(), "LEGAL_MOVES")
+	require.NotNil(t, legal, "белым должны прийти легальные ходы первого хода 6:6")
+	require.Contains(t, legal.Moves, protocol.MovePayload{From: 24, To: 18, Pip: 6},
+		"единственный первый шаг дубля 6:6 — снять шашку с головы 24→18")
 }

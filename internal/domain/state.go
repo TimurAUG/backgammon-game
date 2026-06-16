@@ -120,15 +120,14 @@ func Apply(s GameState, m Move) (GameState, error) {
 //
 // TDD plan #32.
 func IsTurnComplete(s GameState) bool {
-	if len(s.Dice.Remaining) == 0 {
-		return true
-	}
-	for _, p := range s.Dice.Remaining {
-		if CanUsePip(s.Board, s.Turn, p) {
-			return false
-		}
-	}
-	return true
+	// Ход завершён, когда нет ни одного легального хода-кандидата.
+	// candidateMoves учитывает базовые правила И правило головы, поэтому если
+	// оставшиеся пипсы «используемы» лишь с головы, закрытой правилом головы (и
+	// других ходов нет), ход корректно считается завершённым. Раньше тут был
+	// CanUsePip, игнорирующий правило головы, — игрок мог застрять: ходить нечем,
+	// а END_TURN отклонялся бы как ErrMustUsePip. Пустой Remaining → candidateMoves
+	// пуст → true (частный случай покрыт).
+	return len(candidateMoves(s)) == 0
 }
 
 func pipInRemaining(remaining []uint8, pip uint8) bool {
