@@ -29,6 +29,11 @@
   const POINTS: number[] = Array.from({ length: 24 }, (_, i) => i + 1)
   const TRIANGLE_HEIGHT = 320
   const TRIANGLE_HALF_BASE = COLUMN_WIDTH * 0.4
+  // Бейдж-подсказка (#47): кружок с цифрой pip у острия треугольника-цели.
+  // Радиус чуть меньше шашки; смещение от основания — почти к острию, чтобы
+  // метка читалась как «конец стрелки», на которую указывает треугольник.
+  const HINT_RADIUS = 22
+  const HINT_OFFSET = TRIANGLE_HEIGHT - 40
 
   let selectedFrom = $state<number | null>(null)
   // Источник перетаскивания (#41). Отдельно от selectedFrom: drag и клик-режим
@@ -54,6 +59,13 @@
   let suppressClick = false
   const activeFrom = $derived(dragFrom ?? selectedFrom)
 
+  // Подсказки-метки (#47): для выбранной/захваченной шашки — над каждой целью её
+  // pip (значение кубика = дальность хода). Выкид (to === 0) — отдельная зона,
+  // не треугольник, поэтому исключаем. По одной паре (from,to) — один pip.
+  const moveHints = $derived(
+    activeFrom === null ? [] : legalMoves.filter((m) => m.from === activeFrom && m.to !== 0),
+  )
+
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
   // слева (у чёрного/наблюдателя — как есть). #1.
   const flipped = $derived(myColor === 'white')
@@ -62,6 +74,13 @@
     const a = pointAnchor(point, flip)
     const tipY = a.direction === 'up' ? a.y - TRIANGLE_HEIGHT : a.y + TRIANGLE_HEIGHT
     return `${a.x - TRIANGLE_HALF_BASE},${a.y} ${a.x + TRIANGLE_HALF_BASE},${a.y} ${a.x},${tipY}`
+  }
+
+  // Центр бейджа-подсказки (#47): по оси колонки, у острия треугольника-цели.
+  function hintPos(point: number, flip: boolean): { x: number; y: number } {
+    const a = pointAnchor(point, flip)
+    const y = a.direction === 'up' ? a.y - HINT_OFFSET : a.y + HINT_OFFSET
+    return { x: a.x, y }
   }
 
   function checkerCount(point: number): number {
@@ -287,6 +306,22 @@
         />
       {/each}
     {/each}
+
+    <!-- Метки-подсказки (#47): бейдж с цифрой pip над каждой целью. Рисуются
+         после шашек (поверх). pointer-events:none — не перехватывают клик/drop,
+         адресованный треугольнику-цели под ними (иначе ход бы не совершился). -->
+    {#each moveHints as hint (hint.to)}
+      {@const p = hintPos(hint.to, flipped)}
+      <g class="move-hint" data-testid="move-hint-{hint.to}">
+        <circle class="move-hint-bg" cx={p.x} cy={p.y} r={HINT_RADIUS} />
+        <text
+          class="move-hint-pip"
+          x={p.x}
+          y={p.y}
+          text-anchor="middle"
+          dominant-baseline="central">{hint.pip}</text>
+      </g>
+    {/each}
   </svg>
 
   <!-- Зона выкида. Позиция — через CSS: десктоп (≥1024px) слева от доски,
@@ -365,6 +400,21 @@
     fill: #aed581;
     stroke: #2e7d32;
     stroke-width: 3;
+  }
+  /* Метка-подсказка (#47): не перехватывает указатель — клик/drop идёт сквозь
+     неё к треугольнику-цели под ней. */
+  .move-hint {
+    pointer-events: none;
+  }
+  .move-hint-bg {
+    fill: #2e7d32;
+    stroke: #f1f8e9;
+    stroke-width: 3;
+  }
+  .move-hint-pip {
+    fill: #ffffff;
+    font-size: 30px;
+    font-weight: 700;
   }
   .checker.white {
     fill: #f4ece1;
