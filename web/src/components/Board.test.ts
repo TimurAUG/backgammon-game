@@ -566,3 +566,73 @@ describe('Board click deselect (regression)', () => {
     expect(screen.getByTestId('point-24')).not.toHaveClass('selected')
   })
 })
+
+// FRONTEND_SPEC #47 — метка-подсказка с цифрой pip (значение кубика = дальность
+//   хода) над каждой подсвеченной целью выбранной/захваченной шашки.
+describe('Board move-hint pip labels (#47)', () => {
+  test('Board_afterSelect_showsPipLabelOnEachLegalTarget', async () => {
+    // выбрали шашку → над каждой целью её pip (каким кубиком туда идём)
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [
+      { from: 24, to: 18, pip: 6 },
+      { from: 24, to: 19, pip: 5 },
+    ]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-24'))
+
+    expect(screen.getByTestId('move-hint-18')).toHaveTextContent('6')
+    expect(screen.getByTestId('move-hint-19')).toHaveTextContent('5')
+  })
+
+  test('Board_withoutSelection_noPipLabels', async () => {
+    // legalMoves есть, но шашка не выбрана → меток нет
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    expect(screen.queryAllByTestId(/^move-hint-/)).toHaveLength(0)
+  })
+
+  test('Board_bearOffTarget_noPipLabelOnBoard', async () => {
+    // выкид (to == 0) — это зона/кнопка, а не треугольник: метки на доске нет
+    const board = emptyBoard()
+    board[5] = 3
+    const legalMoves: Move[] = [{ from: 6, to: 0, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-6'))
+
+    expect(screen.queryByTestId('move-hint-0')).toBeNull()
+  })
+
+  test('Board_dragOwnChecker_showsPipLabels', async () => {
+    // тот же activeFrom: метки появляются и при захвате (drag), не только клике
+    const board = emptyBoard()
+    board[23] = 15
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await dragGesture(screen.getByTestId('checker-24-0'))
+
+    expect(screen.getByTestId('move-hint-18')).toHaveTextContent('6')
+  })
+
+  test('Board_targetWithOwnCheckers_hintRenderedAbovePieces', async () => {
+    // на цели уже стоят свои шашки: бейдж должен идти ПОСЛЕ них в DOM →
+    // рисуется поверх, цифра pip не перекрывается шашками (много фишек на цели)
+    const board = emptyBoard()
+    board[23] = 12 // голова белых
+    board[17] = 3 // 3 свои белые уже на пункте 18 (целевой)
+    const legalMoves: Move[] = [{ from: 24, to: 18, pip: 6 }]
+    render(Board, { props: { board, myColor: 'white', legalMoves, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-24'))
+
+    const hint = screen.getByTestId('move-hint-18')
+    const topChecker = screen.getByTestId('checker-18-2')
+    expect(topChecker.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
