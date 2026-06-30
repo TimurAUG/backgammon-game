@@ -78,6 +78,34 @@ describe('applyServerMessage LEGAL_MOVES (#8)', () => {
     applyServerMessage({ type: 'LEGAL_MOVES', moves: [] })
     expect(gameState.legalMoves).toEqual([])
   })
+
+  // FRONTEND_SPEC #48 — LEGAL_MOVES несёт reach (составные цели одной шашки).
+  test('gameStore_onLEGAL_MOVES_storesReachChains', () => {
+    applyServerMessage({
+      type: 'LEGAL_MOVES',
+      moves: [{ from: 13, to: 11, pip: 2 }],
+      reach: [
+        { from: 13, path: [11], pips: [2] },
+        { from: 13, path: [11, 7], pips: [2, 4] },
+      ],
+    })
+
+    expect(gameState.reach).toHaveLength(2)
+    expect(gameState.reach[1]).toEqual({ from: 13, path: [11, 7], pips: [2, 4] })
+  })
+
+  test('gameStore_onLEGAL_MOVES_withoutReach_defaultsToEmpty', () => {
+    applyServerMessage({
+      type: 'LEGAL_MOVES',
+      moves: [{ from: 13, to: 11, pip: 2 }],
+      reach: [{ from: 13, path: [11, 7], pips: [2, 4] }],
+    })
+    expect(gameState.reach).toHaveLength(1)
+
+    // LEGAL_MOVES без reach → стор обнуляет reach, не тащит прошлый набор.
+    applyServerMessage({ type: 'LEGAL_MOVES', moves: [{ from: 24, to: 18, pip: 6 }] })
+    expect(gameState.reach).toEqual([])
+  })
 })
 
 describe('applyServerMessage GAME_OVER (#9)', () => {
