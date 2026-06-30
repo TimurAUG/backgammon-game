@@ -5,7 +5,15 @@
 //
 // Все правила игры на сервере; стор только хранит то, что прислал.
 
-import type { Color, Dice, GameStatus, Move, WinKind, ServerMessage } from '../protocol/messages'
+import type {
+  Color,
+  Dice,
+  GameStatus,
+  Move,
+  ReachMove,
+  WinKind,
+  ServerMessage,
+} from '../protocol/messages'
 
 export interface GameStoreState {
   board: number[]
@@ -15,6 +23,10 @@ export interface GameStoreState {
   isFirstMove: { white: boolean; black: boolean }
   dice: Dice | null
   legalMoves: Move[]
+  // Достижимые цели для подсветки прогресса хода (составные ходы одной шашкой).
+  // Дополняет legalMoves; приходит в LEGAL_MOVES.reach. Пусто, если сервер не
+  // прислал (старый сервер / нет ходов).
+  reach: ReachMove[]
   gameOver: { winner: Color; kind: WinKind } | null
   myColor: Color | null
   firstRoll: { white: number; black: number } | null
@@ -32,6 +44,7 @@ function initialGameState(): GameStoreState {
     isFirstMove: { white: true, black: true },
     dice: null,
     legalMoves: [],
+    reach: [],
     gameOver: null,
     myColor: null,
     firstRoll: null,
@@ -61,6 +74,7 @@ export function applyServerMessage(msg: ServerMessage): void {
       break
     case 'LEGAL_MOVES':
       gameState.legalMoves = msg.moves
+      gameState.reach = msg.reach ?? []
       break
     case 'FIRST_ROLL':
       gameState.firstRoll = msg.firstRoll
