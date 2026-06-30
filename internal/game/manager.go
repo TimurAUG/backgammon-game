@@ -432,19 +432,15 @@ func (g *Game) broadcastTurnSkippedLocked(c domain.Color, d domain.Dice) {
 // SPEC: «Если массив пуст — у игрока нет легальных продолжений, сервер
 // автоматически передаст ход (через внутренний END_TURN)».
 func (g *Game) sendLegalMovesOrAutoEndTurnLocked(c domain.Color) {
-	moves := domain.LegalMoves(g.State)
-	if len(moves) > 0 {
-		if g.conns[c] == nil {
-			return
-		}
-		payload := make([]protocol.MovePayload, len(moves))
-		for i, m := range moves {
-			payload[i] = protocol.MovePayload{From: uint8(m.From), To: uint8(m.To), Pip: m.Pip}
-		}
-		_ = g.conns[c].Send(protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload})
+	msg := legalMovesMessage(g.State)
+	if len(msg.Moves) == 0 {
+		g.autoEndTurnLocked(c)
 		return
 	}
-	g.autoEndTurnLocked(c)
+	if g.conns[c] == nil {
+		return
+	}
+	_ = g.conns[c].Send(msg)
 }
 
 // autoEndTurnLocked передаёт ход сопернику без проверки IsTurnComplete
@@ -547,12 +543,34 @@ func (g *Game) LegalMovesMessageFor(color domain.Color) *protocol.ServerMessage 
 	if g.State.Status != domain.StatusWaitingForMove || g.State.Turn != color {
 		return nil
 	}
-	moves := domain.LegalMoves(g.State)
-	payload := make([]protocol.MovePayload, len(moves))
-	for i, mv := range moves {
-		payload[i] = protocol.MovePayload{From: uint8(mv.From), To: uint8(mv.To), Pip: mv.Pip}
+	msg := legalMovesMessage(g.State)
+	return &msg
+}
+
+// legalMovesMessage собирает LEGAL_MOVES для состояния s: одиночные шаги
+// (moves — атомарная правда для валидации MOVE) и достижимые цели одной шашки,
+// включая составные ходы несколькими кубиками (reach — для подсказок «куда
+// дойдёшь всеми кубиками»). Reach дополняет Moves, не заменяет его.
+func legalMovesMessage(s domain.GameState) protocol.ServerMessage {
+	moves := domain.LegalMoves(s)
+	mp := make([]protocol.MovePayload, len(moves))
+	for i, m := range moves {
+		mp[i] = protocol.MovePayload{From: uint8(m.From), To: uint8(m.To), Pip: m.Pip}
 	}
-	return &protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: payload}
+	reach := domain.ReachableTargets(s)
+	rp := make([]protocol.ReachPayload, len(reach))
+	for i, r := range reach {
+		path := make([]int, len(r.Path))
+		for j, p := range r.Path {
+			path[j] = int(p)
+		}
+		pips := make([]int, len(r.Pips))
+		for j, p := range r.Pips {
+			pips[j] = int(p)
+		}
+		rp[i] = protocol.ReachPayload{From: uint8(r.From), Path: path, Pips: pips}
+	}
+	return protocol.ServerMessage{Type: "LEGAL_MOVES", Moves: mp, Reach: rp}
 }
 
 func colorString(c domain.Color) string {

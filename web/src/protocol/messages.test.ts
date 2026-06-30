@@ -70,6 +70,19 @@ describe('parseServerMessage', () => {
     expect(msg.moves[0]).toEqual({ from: 24, to: 18, pip: 6 })
   })
 
+  test('parseServerMessage_LEGAL_MOVES_parsesReachChains', () => {
+    const raw = JSON.stringify({
+      type: 'LEGAL_MOVES',
+      moves: [{ from: 13, to: 11, pip: 2 }],
+      reach: [{ from: 13, path: [11, 7], pips: [2, 4] }],
+    })
+
+    const msg = parseServerMessage(raw)
+    expect(msg.type).toBe('LEGAL_MOVES')
+    if (msg.type !== 'LEGAL_MOVES') return
+    expect(msg.reach).toEqual([{ from: 13, path: [11, 7], pips: [2, 4] }])
+  })
+
   test('parseServerMessage_TURN_SKIPPED_keepsColorAndDice', () => {
     const raw = JSON.stringify({
       type: 'TURN_SKIPPED',

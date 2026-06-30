@@ -13,7 +13,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-import type { Move } from '../protocol/messages'
+import type { Move, ReachMove } from '../protocol/messages'
 
 import Board from './Board.svelte'
 
@@ -634,5 +634,134 @@ describe('Board move-hint pip labels (#47)', () => {
     const hint = screen.getByTestId('move-hint-18')
     const topChecker = screen.getByTestId('checker-18-2')
     expect(topChecker.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+// FRONTEND_SPEC #49 — подсветка ВСЕХ достижимых целей выбранной шашки (reach),
+//   цвет = число потраченных кубиков (1 зел/2 син/3 янтарь/4 фиолет), бейдж =
+//   суммарная дистанция; мини-легенда при наличии составной цели.
+describe('Board reach hints — color by dice count (#49)', () => {
+  test('Board_reachHints_badgeShowsDistanceAndTierColor', async () => {
+    const board = emptyBoard()
+    board[12] = 1 // белая на 13
+    const reach: ReachMove[] = [
+      { from: 13, path: [11], pips: [2] },
+      { from: 13, path: [11, 7], pips: [2, 4] },
+    ]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+
+    const single = screen.getByTestId('move-hint-11')
+    expect(single).toHaveTextContent('2')
+    expect(single).toHaveClass('tier-1')
+
+    const combined = screen.getByTestId('move-hint-7')
+    expect(combined).toHaveTextContent('6') // дистанция 2+4
+    expect(combined).toHaveClass('tier-2')
+  })
+
+  test('Board_reachCombinedTarget_triangleHighlightedWithTier', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const reach: ReachMove[] = [{ from: 13, path: [11, 7], pips: [2, 4] }]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+
+    const target = screen.getByTestId('point-7')
+    expect(target).toHaveClass('legal-target')
+    expect(target).toHaveClass('tier-2')
+  })
+
+  test('Board_reachDouble_fourthStepTier4WithFullDistance', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const reach: ReachMove[] = [
+      { from: 13, path: [10], pips: [3] },
+      { from: 13, path: [10, 7], pips: [3, 3] },
+      { from: 13, path: [10, 7, 4], pips: [3, 3, 3] },
+      { from: 13, path: [10, 7, 4, 1], pips: [3, 3, 3, 3] },
+    ]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+
+    const far = screen.getByTestId('move-hint-1')
+    expect(far).toHaveTextContent('12') // 3+3+3+3
+    expect(far).toHaveClass('tier-4')
+  })
+
+  test('Board_reachWithCombinedTarget_showsLegend', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const reach: ReachMove[] = [
+      { from: 13, path: [11], pips: [2] },
+      { from: 13, path: [11, 7], pips: [2, 4] },
+    ]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+
+    expect(screen.queryByTestId('dice-legend')).not.toBeNull()
+  })
+
+  test('Board_reachOnlySingleTargets_noLegend', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const reach: ReachMove[] = [{ from: 13, path: [11], pips: [2] }]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove: vi.fn() } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+
+    expect(screen.queryByTestId('dice-legend')).toBeNull()
+  })
+})
+
+// FRONTEND_SPEC #50 — выбор составной цели (несколько кубиков одной шашкой) шлёт
+//   цепочку MOVE по path по порядку; одиночная цель — один MOVE (как раньше).
+describe('Board reach — combined target sends move chain (#50)', () => {
+  test('Board_clickCombinedTarget_sendsMoveChainInOrder', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const onMove = vi.fn()
+    const reach: ReachMove[] = [{ from: 13, path: [11, 7], pips: [2, 4] }]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+    await fireEvent.click(screen.getByTestId('point-7'))
+
+    expect(onMove).toHaveBeenCalledTimes(2)
+    expect(onMove).toHaveBeenNthCalledWith(1, 13, 11)
+    expect(onMove).toHaveBeenNthCalledWith(2, 11, 7)
+  })
+
+  test('Board_clickSingleReachTarget_sendsOneMove', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const onMove = vi.fn()
+    const reach: ReachMove[] = [{ from: 13, path: [11], pips: [2] }]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove } })
+
+    await fireEvent.click(screen.getByTestId('point-13'))
+    await fireEvent.click(screen.getByTestId('point-11'))
+
+    expect(onMove).toHaveBeenCalledTimes(1)
+    expect(onMove).toHaveBeenCalledWith(13, 11)
+  })
+
+  test('Board_dragDropCombinedTarget_sendsMoveChain', async () => {
+    const board = emptyBoard()
+    board[12] = 1
+    const onMove = vi.fn()
+    const reach: ReachMove[] = [{ from: 13, path: [11, 7], pips: [2, 4] }]
+    render(Board, { props: { board, myColor: 'white', legalMoves: [], reach, onMove } })
+
+    await dragGesture(screen.getByTestId('checker-13-0'))
+    await fireEvent.pointerUp(screen.getByTestId('point-7'))
+
+    expect(onMove).toHaveBeenCalledTimes(2)
+    expect(onMove).toHaveBeenNthCalledWith(1, 13, 11)
+    expect(onMove).toHaveBeenNthCalledWith(2, 11, 7)
   })
 })

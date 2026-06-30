@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Color, Move } from '../protocol/messages'
+  import type { Color, Move, ReachMove } from '../protocol/messages'
 
   import {
     BAR_WIDTH,
@@ -15,6 +15,7 @@
   interface Props {
     board: number[]
     legalMoves?: Move[]
+    reach?: ReachMove[]
     myColor?: Color | null
     onMove?: (from: number, to: number) => void
   }
@@ -22,6 +23,7 @@
   let {
     board,
     legalMoves = [],
+    reach = [],
     myColor = null,
     onMove = () => {},
   }: Props = $props()
@@ -59,12 +61,41 @@
   let suppressClick = false
   const activeFrom = $derived(dragFrom ?? selectedFrom)
 
-  // Подсказки-метки (#47): для выбранной/захваченной шашки — над каждой целью её
-  // pip (значение кубика = дальность хода). Выкид (to === 0) — отдельная зона,
-  // не треугольник, поэтому исключаем. По одной паре (from,to) — один pip.
-  const moveHints = $derived(
-    activeFrom === null ? [] : legalMoves.filter((m) => m.from === activeFrom && m.to !== 0),
-  )
+  // Подсказки прогресса хода (#49): для выбранной/захваченной шашки — ВСЕ
+  // достижимые цели (reach с сервера), включая составные ходы несколькими
+  // кубиками одной шашкой. dice = сколько кубиков тратится (определяет цвет),
+  // dist = суммарная дистанция (цифра на бейдже), path = пункты-остановки для
+  // проигрывания цепочки MOVE (#50). Если сервер не прислал reach (старый
+  // сервер или тест без reach) — фолбэк на одиночные шаги из legalMoves
+  // (выкид to === 0 исключаем: это отдельная зона, не треугольник).
+  type Hint = { to: number; dice: number; dist: number; path: number[] }
+  const moveHints = $derived.by((): Hint[] => {
+    if (activeFrom === null) return []
+    if (reach.length > 0) {
+      return reach.flatMap((r) => {
+        if (r.from !== activeFrom) return []
+        const to = r.path[r.path.length - 1]
+        if (to === undefined) return []
+        return [{ to, dice: r.path.length, dist: r.pips.reduce((sum, p) => sum + p, 0), path: r.path }]
+      })
+    }
+    return legalMoves
+      .filter((m) => m.from === activeFrom && m.to !== 0)
+      .map((m) => ({ to: m.to, dice: 1, dist: m.pip, path: [m.to] }))
+  })
+
+  function hintFor(point: number): Hint | undefined {
+    return moveHints.find((h) => h.to === point)
+  }
+
+  // Легенда цветов (#49): показываем только когда на экране есть составная цель
+  // (есть что объяснять), перечисляем лишь присутствующие тиры.
+  const showDiceLegend = $derived(moveHints.some((h) => h.dice > 1))
+  const legendTiers = $derived([...new Set(moveHints.map((h) => h.dice))].sort((a, b) => a - b))
+
+  function diceLabel(dice: number): string {
+    return dice === 1 ? '1 кубик' : `${dice} кубика`
+  }
 
   // Перспектива: белый видит доску повёрнутой на 180°, чтобы его шашки были
   // слева (у чёрного/наблюдателя — как есть). #1.
@@ -97,11 +128,6 @@
     return myColor === 'white' ? v > 0 : v < 0
   }
 
-  function isLegalTarget(point: number): boolean {
-    if (activeFrom === null) return false
-    return legalMoves.some((m) => m.from === activeFrom && m.to === point)
-  }
-
   function handlePointClick(point: number): void {
     // клик после drag браузер шлёт сам — он не должен трогать выделение
     if (suppressClick) {
@@ -109,9 +135,12 @@
       return
     }
     if (myColor === null) return
-    if (selectedFrom !== null && isLegalTarget(point)) {
-      commitMove(selectedFrom, point)
-      return
+    if (selectedFrom !== null) {
+      const hint = hintFor(point)
+      if (hint !== undefined) {
+        commitMoveChain(selectedFrom, hint.path)
+        return
+      }
     }
     if (isMyChecker(point)) {
       selectedFrom = selectedFrom === point ? null : point
@@ -177,7 +206,14 @@
     const from = dragFrom
     suppressClick = true
     const point = resolveDropPoint(event)
-    if (point !== null && isLegalTarget(point)) commitMove(from, point)
+    if (point === 0) {
+      // Выкид: его нет в reach (отдельная зона) — решаем по legalMoves.
+      if (legalMoves.some((m) => m.from === from && m.to === 0)) commitMove(from, 0)
+      else cancelDrag()
+      return
+    }
+    const hint = point === null ? undefined : hintFor(point)
+    if (hint !== undefined) commitMoveChain(from, hint.path)
     else cancelDrag()
   }
 
@@ -214,15 +250,32 @@
     releaseCapture()
   }
 
-  // Завершение хода из любого режима (клик или drag): сброс выбора и
-  // перетаскивания + onMove. Источник правды — сервер, ждём STATE.
-  function commitMove(from: number, to: number): void {
+  // Сброс клик- и drag-выделения после хода. Источник правды — сервер, ждём STATE.
+  function resetSelection(): void {
     clearHoldTimer()
     pendingDrag = null
     dragFrom = null
     selectedFrom = null
     releaseCapture()
+  }
+
+  // Одиночный ход из любого режима (клик или drag).
+  function commitMove(from: number, to: number): void {
+    resetSelection()
     onMove(from, to)
+  }
+
+  // Составной ход (#50): проигрываем цепочку остановок одной шашки как
+  // последовательность одиночных MOVE — протокол атомарный (один кубик за MOVE),
+  // сервер применяет их по порядку и шлёт STATE после каждого. Ждём STATE, без
+  // оптимистичного применения.
+  function commitMoveChain(from: number, path: number[]): void {
+    resetSelection()
+    let cur = from
+    for (const next of path) {
+      onMove(cur, next)
+      cur = next
+    }
   }
 
   // Завершение жеста слушаем на window: на touch с захватом pointerup приходит
@@ -277,12 +330,13 @@
   >
     <rect class="bar" x={BAR_X} y="0" width={BAR_WIDTH} height={VIEWBOX_HEIGHT} />
     {#each POINTS as point (point)}
+      {@const hint = hintFor(point)}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <polygon
-        class="point {point % 2 === 0 ? 'even' : 'odd'}"
+        class="point {point % 2 === 0 ? 'even' : 'odd'}{hint ? ` tier-${hint.dice}` : ''}"
         class:selected={selectedFrom === point || dragFrom === point}
-        class:legal-target={isLegalTarget(point)}
+        class:legal-target={hint !== undefined}
         data-testid="point-{point}"
         points={trianglePoints(point, flipped)}
         onclick={() => handlePointClick(point)}
@@ -307,19 +361,20 @@
       {/each}
     {/each}
 
-    <!-- Метки-подсказки (#47): бейдж с цифрой pip над каждой целью. Рисуются
-         после шашек (поверх). pointer-events:none — не перехватывают клик/drop,
-         адресованный треугольнику-цели под ними (иначе ход бы не совершился). -->
+    <!-- Метки-подсказки (#49): бейдж над каждой достижимой целью. Цифра =
+         суммарная дистанция, цвет (через tier-N) = число потраченных кубиков.
+         Рисуются после шашек (поверх). pointer-events:none — не перехватывают
+         клик/drop, адресованный треугольнику-цели под ними. -->
     {#each moveHints as hint (hint.to)}
       {@const p = hintPos(hint.to, flipped)}
-      <g class="move-hint" data-testid="move-hint-{hint.to}">
+      <g class="move-hint tier-{hint.dice}" data-testid="move-hint-{hint.to}">
         <circle class="move-hint-bg" cx={p.x} cy={p.y} r={HINT_RADIUS} />
         <text
           class="move-hint-pip"
           x={p.x}
           y={p.y}
           text-anchor="middle"
-          dominant-baseline="central">{hint.pip}</text>
+          dominant-baseline="central">{hint.dist}</text>
       </g>
     {/each}
   </svg>
@@ -338,6 +393,18 @@
           Сбросить шашку
         </button>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Легенда (#49): какой цвет = сколько кубиков. Видна только когда есть
+       составная цель (одиночные ходы и так зелёные, объяснять нечего). -->
+  {#if showDiceLegend}
+    <div class="dice-legend" data-testid="dice-legend">
+      {#each legendTiers as dice (dice)}
+        <span class="legend-item tier-{dice}">
+          <span class="legend-swatch"></span>{diceLabel(dice)}
+        </span>
+      {/each}
     </div>
   {/if}
 </div>
@@ -415,6 +482,63 @@
     fill: #ffffff;
     font-size: 30px;
     font-weight: 700;
+  }
+  /* Тиры по числу кубиков (#49): цель и бейдж окрашиваются по тому, сколько
+     кубиков тратится на ход до неё. tier-1 (1 кубик) — зелёный (база выше). */
+  .point.legal-target.tier-2 {
+    fill: #90caf9;
+    stroke: #1565c0;
+  }
+  .point.legal-target.tier-3 {
+    fill: #ffcc80;
+    stroke: #e65100;
+  }
+  .point.legal-target.tier-4 {
+    fill: #ce93d8;
+    stroke: #6a1b9a;
+  }
+  .move-hint.tier-2 .move-hint-bg {
+    fill: #1565c0;
+  }
+  .move-hint.tier-3 .move-hint-bg {
+    fill: #e65100;
+  }
+  .move-hint.tier-4 .move-hint-bg {
+    fill: #6a1b9a;
+  }
+  .dice-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin-top: 0.5rem;
+    font-size: 13px;
+    font-weight: 700;
+    color: #3b2410;
+  }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 2px solid #2e7d32;
+    background: #aed581;
+    box-sizing: border-box;
+  }
+  .legend-item.tier-2 .legend-swatch {
+    background: #90caf9;
+    border-color: #1565c0;
+  }
+  .legend-item.tier-3 .legend-swatch {
+    background: #ffcc80;
+    border-color: #e65100;
+  }
+  .legend-item.tier-4 .legend-swatch {
+    background: #ce93d8;
+    border-color: #6a1b9a;
   }
   .checker.white {
     fill: #f4ece1;

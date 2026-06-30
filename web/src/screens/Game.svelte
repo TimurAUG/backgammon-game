@@ -131,6 +131,7 @@
   <Board
     board={gameState.board}
     legalMoves={gameState.legalMoves}
+    reach={gameState.reach}
     myColor={gameState.myColor}
     onMove={handleMove}
   />

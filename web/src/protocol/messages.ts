@@ -43,6 +43,18 @@ export interface Move {
   pip: number
 }
 
+// ReachMove — достижимая цель ОДНОЙ шашки, в том числе составным ходом
+// несколькими кубиками. Дополняет Move (одиночные шаги), не заменяет.
+// path — пункты-остановки по порядку (каждый — цель отдельного MOVE),
+// последний = финальная цель; pips — кубик на каждый шаг (len == path.length).
+// Дистанция = сумма pips, число кубиков = path.length. Выкид сюда не входит.
+// Зеркало protocol.ReachPayload на бэке.
+export interface ReachMove {
+  from: number
+  path: number[]
+  pips: number[]
+}
+
 // ChatMessage — одно сообщение чата партии. sender — цвет автора (для CHAT и
 // элементов CHAT_HISTORY). Зеркало protocol.ChatPayload на бэке.
 export interface ChatMessage {
@@ -61,7 +73,7 @@ export type ServerMessage =
       isFirstMove: { white: boolean; black: boolean }
       dice?: Dice
     }
-  | { type: 'LEGAL_MOVES'; moves: Move[] }
+  | { type: 'LEGAL_MOVES'; moves: Move[]; reach?: ReachMove[] }
   | { type: 'TURN_SKIPPED'; color: Color; dice: Dice }
   | { type: 'FIRST_ROLL'; firstRoll: { white: number; black: number } }
   | { type: 'OPPONENT_JOINED'; name?: string }

@@ -36,6 +36,23 @@ type MovePayload struct {
 	Pip  uint8 `json:"pip"`
 }
 
+// ReachPayload — достижимая цель ОДНОЙ шашки в LEGAL_MOVES, в том числе
+// составным ходом несколькими кубиками. Дополняет Moves (одиночные шаги),
+// не заменяет: Moves остаётся атомарной правдой для валидации MOVE.
+//
+// From — исходный пункт (1..24). Path — пункты-остановки по порядку (каждый —
+// цель отдельного MOVE), последний элемент = финальная цель. Pips — кубики,
+// потраченные на каждый шаг, len(Pips) == len(Path). Для одиночной цели длина
+// массивов равна 1. Выкид (To == 0) сюда не входит — это отдельная зона UI.
+//
+// Path/Pips — []int, а НЕ []uint8: encoding/json кодирует []uint8 в base64,
+// а контракт требует массив чисел (как Remaining у DicePayload).
+type ReachPayload struct {
+	From uint8 `json:"from"`
+	Path []int `json:"path"`
+	Pips []int `json:"pips"`
+}
+
 // ChatPayload — одно сообщение в CHAT_HISTORY. Sender — цвет автора строкой
 // ("white"/"black").
 type ChatPayload struct {
@@ -81,6 +98,7 @@ type ServerMessage struct {
 	IsFirstMove *IsFirstMovePayload `json:"isFirstMove,omitempty"`
 	FirstRoll   *FirstRollPayload   `json:"firstRoll,omitempty"`
 	Moves       []MovePayload       `json:"moves,omitempty"`
+	Reach       []ReachPayload      `json:"reach,omitempty"`
 	Winner      string              `json:"winner,omitempty"`
 	Kind        string              `json:"kind,omitempty"`
 	Code        string              `json:"code,omitempty"`
