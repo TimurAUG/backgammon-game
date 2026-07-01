@@ -167,6 +167,21 @@ describe('Game first-roll winner re-roll (#2)', () => {
   })
 })
 
+describe('Game waiting for opponent first roll (#51)', () => {
+  // Пользовательский баг: нажал «Бросить за первый ход» — и ничего не видно,
+  // пока соперник не бросит. Теперь кнопка сменяется индикатором ожидания.
+  test('Game_afterRollForFirstClick_showsWaitingIndicator', async () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture())
+    render(Game, { props: noop })
+
+    await fireEvent.click(screen.getByTestId('action-roll-for-first'))
+
+    expect(screen.queryByTestId('action-roll-for-first')).toBeNull()
+    expect(screen.getByTestId('waiting-first-roll')).toBeInTheDocument()
+  })
+})
+
 describe('Game switch-game (#27)', () => {
   test('Game_switchGameButton_callsOnNewGame', async () => {
     const onNewGame = vi.fn()

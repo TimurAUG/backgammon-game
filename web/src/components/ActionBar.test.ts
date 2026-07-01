@@ -43,17 +43,14 @@ describe('ActionBar visibility (#17/#18 show conditions)', () => {
   })
 
   test('ActionBar_afterRolledForFirst_myTurn_showsRoll', () => {
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'waitingForRoll',
-          turn: 'white',
-          myColor: 'white',
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'waitingForRoll',
+        turn: 'white',
+        myColor: 'white',
+      }),
+    })
 
     expect(screen.queryByTestId('action-roll-for-first')).toBeNull()
     expect(screen.queryByTestId('action-roll')).not.toBeNull()
@@ -61,17 +58,14 @@ describe('ActionBar visibility (#17/#18 show conditions)', () => {
   })
 
   test('ActionBar_afterRolledForFirst_opponentTurn_hidesRoll', () => {
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'waitingForRoll',
-          turn: 'black',
-          myColor: 'white',
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'waitingForRoll',
+        turn: 'black',
+        myColor: 'white',
+      }),
+    })
 
     expect(screen.queryByTestId('action-roll')).toBeNull()
     expect(screen.queryByTestId('action-end-turn')).toBeNull()
@@ -79,34 +73,28 @@ describe('ActionBar visibility (#17/#18 show conditions)', () => {
   })
 
   test('ActionBar_waitingForMove_myTurn_showsEndTurn', () => {
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'waitingForMove',
-          turn: 'white',
-          myColor: 'white',
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'waitingForMove',
+        turn: 'white',
+        myColor: 'white',
+      }),
+    })
 
     expect(screen.queryByTestId('action-roll')).toBeNull()
     expect(screen.queryByTestId('action-end-turn')).not.toBeNull()
   })
 
   test('ActionBar_finished_hidesAllActiveButtons', () => {
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'finished',
-          turn: 'white',
-          myColor: 'white',
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'finished',
+        turn: 'white',
+        myColor: 'white',
+      }),
+    })
 
     expect(screen.queryByTestId('action-roll-for-first')).toBeNull()
     expect(screen.queryByTestId('action-roll')).toBeNull()
@@ -127,18 +115,15 @@ describe('ActionBar click handlers (#17/#18)', () => {
 
   test('ActionBar_clickRoll_sendsRoll', async () => {
     const onAction = vi.fn()
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'waitingForRoll',
-          turn: 'white',
-          myColor: 'white',
-          onAction,
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'waitingForRoll',
+        turn: 'white',
+        myColor: 'white',
+        onAction,
+      }),
+    })
 
     await fireEvent.click(screen.getByTestId('action-roll'))
 
@@ -147,18 +132,15 @@ describe('ActionBar click handlers (#17/#18)', () => {
 
   test('ActionBar_clickEndTurn_sendsEndTurn', async () => {
     const onAction = vi.fn()
-    render(
-      ActionBar,
-      {
-        props: defaultProps({
-          rolledForFirst: true,
-          status: 'waitingForMove',
-          turn: 'white',
-          myColor: 'white',
-          onAction,
-        }),
-      },
-    )
+    render(ActionBar, {
+      props: defaultProps({
+        rolledForFirst: true,
+        status: 'waitingForMove',
+        turn: 'white',
+        myColor: 'white',
+        onAction,
+      }),
+    })
 
     await fireEvent.click(screen.getByTestId('action-end-turn'))
 
@@ -172,6 +154,48 @@ describe('ActionBar click handlers (#17/#18)', () => {
     await fireEvent.click(screen.getByTestId('action-resign'))
 
     expect(onAction).toHaveBeenCalledWith({ type: 'RESIGN' })
+  })
+})
+
+describe('ActionBar waiting for opponent first roll (#51)', () => {
+  // Сервер молчит, пока оба не пришлют ROLL_FOR_FIRST (FIRST_ROLL приходит
+  // только после второго). Клиент сам помнит факт клика и заменяет кнопку
+  // индикатором «ждём соперника», иначе после броска «ничего не происходит».
+  test('ActionBar_firstRollPhase_beforeClick_noWaitingIndicator', () => {
+    render(ActionBar, { props: defaultProps({ rolledForFirst: false }) })
+
+    expect(screen.queryByTestId('action-roll-for-first')).not.toBeNull()
+    expect(screen.queryByTestId('waiting-first-roll')).toBeNull()
+  })
+
+  test('ActionBar_clickRollForFirst_hidesButtonShowsWaiting', async () => {
+    render(ActionBar, { props: defaultProps({ rolledForFirst: false }) })
+
+    await fireEvent.click(screen.getByTestId('action-roll-for-first'))
+
+    expect(screen.queryByTestId('action-roll-for-first')).toBeNull()
+    expect(screen.queryByTestId('waiting-first-roll')).not.toBeNull()
+  })
+
+  test('ActionBar_afterRolledForFirst_hidesWaitingIndicator', async () => {
+    const { rerender } = render(ActionBar, { props: defaultProps({ rolledForFirst: false }) })
+    await fireEvent.click(screen.getByTestId('action-roll-for-first'))
+    expect(screen.queryByTestId('waiting-first-roll')).not.toBeNull()
+
+    // Пришёл FIRST_ROLL → розыгрыш состоялся: индикатор уступает место игре.
+    await rerender(defaultProps({ rolledForFirst: true }))
+
+    expect(screen.queryByTestId('waiting-first-roll')).toBeNull()
+  })
+
+  test('ActionBar_disabledClickRollForFirst_noWaitingIndicator', async () => {
+    render(ActionBar, { props: defaultProps({ rolledForFirst: false, disabled: true }) })
+
+    await fireEvent.click(screen.getByTestId('action-roll-for-first'))
+
+    // При реконнекте бросок не ушёл — не притворяемся, что ждём соперника.
+    expect(screen.queryByTestId('waiting-first-roll')).toBeNull()
+    expect(screen.queryByTestId('action-roll-for-first')).not.toBeNull()
   })
 })
 
