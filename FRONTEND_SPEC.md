@@ -41,16 +41,17 @@ web/
     transport/
       ws.ts              — WSClient: connect/send/onMessage/реконнект
     stores/
-      game.svelte.ts          — board/turn/dice/borneOff/status/isFirstMove/legalMoves/gameOver/myColor/firstRoll/started
+      game.svelte.ts          — board/turn/dice/borneOff/status/isFirstMove/allHome/legalMoves/gameOver/myColor/firstRoll/started
       connection.svelte.ts    — state: idle | connecting | connected | reconnecting | error
       notifications.svelte.ts — стек тостов (соперник присоединился / «Твой бросок»)
       chat.svelte.ts          — сообщения чата партии + счётчик непрочитанных + open
     screens/
       Connect.svelte     — создать игру / войти по приглашению / ручной ввод; persistence в localStorage
-      Game.svelte        — Board + Dice + ActionBar + GameOver + баннеры (первый бросок, переподключение)
+      Game.svelte        — Board + BearOffCounter + Dice + ActionBar + GameOver + Chat + баннеры (первый бросок, переподключение)
     components/
       Board.svelte       — SVG-доска, шашки и клик-режим ходов
       Dice.svelte        — два кубика + оставшиеся пипсы
+      BearOffCounter.svelte — счётчик оставшихся к сбросу шашек (осталось/15) в фазе сброса, для обоих цветов
       ActionBar.svelte   — контекстные кнопки ROLL_FOR_FIRST/ROLL/END_TURN/RESIGN
       GameOver.svelte    — модалка результата
       Toast.svelte       — одна плашка уведомления (role=status/aria-live, авто-скрытие)
@@ -209,6 +210,8 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 49. (session-добавка) `components/Board.svelte`: подсветка ВСЕХ достижимых целей выбранной/захваченной шашки из `reach` — цвет по числу кубиков (классы `tier-N` на цели-треугольнике и бейдже; 1 зел/2 син/3 янтарь/4 фиолет), бейдж = суммарная дистанция (`dist`). Мини-легенда (`dice-legend`) при наличии составной цели. Фолбэк на одиночные `legalMoves`, если `reach` пуст.
 50. (session-добавка) `components/Board.svelte`: выбор/дроп составной цели проигрывает `path` как цепочку `MOVE` (`commitMoveChain`) — протокол атомарный (по кубику за `MOVE`), сервер применяет по порядку; одиночная цель — один `MOVE` (как раньше).
 
+52. (session-добавка) Счётчик оставшихся к сбросу шашек. Сквозная (бэк+фронт): `STATE` получил поле `allHome {white,black}` = доменный `AllInHome` (`internal/protocol/messages.go` + `game.StateMessage`); TS-зеркало в `messages.ts`, поле `allHome` в gameStore. Новый `components/BearOffCounter.svelte`: для цвета с `allHome[c]` показывает «Белые|Чёрные (15−borneOff)/15», плашка скрыта вне фазы сброса; проводка в `Game.svelte` (боковая колонка рядом с кубиками), для обоих игроков. Клиент не считает «все дома» сам — берёт готовый флаг из STATE (как `borneOff`/`isFirstMove`).
+
 ### Этап 15 — drag&drop шашек
 
 Перетаскивание **поверх** клик-режима (клики остаются — § 4). Технология — **Pointer Events**: единый API для мыши и тача, работает с SVG. Без `setPointerCapture` (jsdom его не реализует, и захват сломал бы определение цели по элементу). Цель сброса определяется **DOM-элементом под `pointerup`**, а не координатами курсора — поэтому drop-логика тестируема в jsdom, где у события нет `clientX`. Координаты нужны лишь для «летящей» шашки-призрака — это визуал, его позицию не тестируем (§ «Что НЕ тестировать»). HTML5 native DnD отвергнут (плохо дружит с SVG: нет drag-image, слабый тач), сторонняя библиотека — против принципа «без UI-библиотек в MVP» (§ 1).
@@ -245,6 +248,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - ✅ Session-добавка #47 — метки-подсказки pip над целями: над каждой подсвеченной целью выбранной/захваченной шашки — бейдж `move-hint-{to}` (зелёный кружок с белой цифрой) со значением кубика `pip` из `legalMoves` (на какую дальность идёт ход). `$derived moveHints` фильтрует `legalMoves` по общему `activeFrom` (работает и для клика, и для drag) и исключает выкид (`to == 0` — это отдельная зона, не треугольник); `hintPos` ставит бейдж у острия треугольника. Бейдж рендерится после шашек (z-order → поверх) с непрозрачным фоном — цифра читается даже на занятой своими цели; `pointer-events:none` пропускает клик/drop к пункту-цели под меткой. Только фронт, без правок протокола. 254 теста фронта (+5).
 - ✅ Session-добавка #48–#50 — подсказки прогресса хода: сервер шлёт `reach` в `LEGAL_MOVES` (составные ходы одной шашкой, бэкенд SPEC #50–#51); `Board` подсвечивает все достижимые цели цветом по числу кубиков (`tier-N`) с суммарной дистанцией на бейдже и мини-легендой; выбор/дроп составной цели шлёт цепочку `MOVE` по `path`. 265 тестов фронта (+12).
 - ✅ Session-добавка #51 — индикатор ожидания соперника в розыгрыше первого хода: `ROLL_FOR_FIRST` — «сигнал готовности», сервер молчит, пока не пришли оба (FIRST_ROLL шлётся только после второго), поэтому после клика «ничего не происходило». `ActionBar` держит локальный `$state`-флаг `sentRollForFirst` (ставится в `act` при клике, гейтит показ вместе с `inFirstRollPhase`): кнопка `action-roll-for-first` сменяется индикатором `waiting-first-roll` («Ожидание другого игрока…» + спиннер, `role=status`). Флаг не сбрасывается вручную — в партии `rolledForFirst` монотонно `false→true`, а новая партия размонтирует `ActionBar` (App: `client→null`); `disabled` (реконнект) не даёт ложно «ждать», т.к. бросок не ушёл. Только фронт, без правок протокола. 270 тестов фронта (+5).
+- ✅ Session-добавка #52 — счётчик оставшихся к сбросу шашек. Сквозная фича: сервер в `STATE` шлёт `allHome {white,black}` = значение доменного `AllInHome` (`protocol/messages.go` — `AllHomePayload`; `game.StateMessage` заполняет из `AllInHome(board, White/Black)`). Фронт зеркалит поле в `messages.ts` (обязательное, как `borneOff`) и хранит в gameStore (initial `{false,false}`, apply в STATE). `components/BearOffCounter.svelte` рисует «осталось/15» = `(15−borneOff[c])/15` для каждого цвета, у кого `allHome[c]` (все шашки в доме), и не рендерит ничего вне фазы сброса; проводка в `Game.svelte` (боковая колонка рядом с кубиками). Показывается для обоих игроков. Клиент не дублирует правило «все дома» — берёт готовый флаг из STATE. Бэк +1 тест (`state_message`), фронт +8 тестов: стор +2, `BearOffCounter` +4, проводка `Game` +2 (STATE-парсинг-тест расширен полем `allHome`). 278 тестов фронта.
 
 ## 9. Открытые вопросы
 

@@ -176,7 +176,7 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 
 | `type` | Payload | Когда |
 |---|---|---|
-| `STATE` | `{ board, turn, dice, borneOff, status, isFirstMove }` | После каждого изменения |
+| `STATE` | `{ board, turn, dice, borneOff, status, isFirstMove, allHome }` | После каждого изменения |
 | `LEGAL_MOVES` | `{ moves: [{from,to,pip}] }` | После ROLL и после каждого MOVE |
 | `OPPONENT_JOINED` | `{ name }` | Соперник подключился |
 | `OPPONENT_LEFT` | `{}` | Соперник отвалился |

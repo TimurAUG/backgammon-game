@@ -104,11 +104,14 @@ description: Референс WebSocket-протокола между клиен
   },
   "borneOff": { "white": 0-15, "black": 0-15 },
   "status": "waitingForRoll" | "waitingForMove" | "finished",
-  "isFirstMove": { "white": true, "black": true }
+  "isFirstMove": { "white": true, "black": true },
+  "allHome": { "white": true, "black": true }
 }
 ```
 
 Кодировка `board[i]`: знак — цвет (`>0` белые, `<0` чёрные, `0` пусто), модуль — количество.
+
+`allHome[color]` — все шашки цвета в его доме (фаза сброса), значение доменного `AllInHome`. Позволяет клиенту показывать счётчик оставшихся к сбросу шашек только в фазе сброса, не дублируя правило «все дома» на клиенте.
 
 ### `LEGAL_MOVES`
 
