@@ -27,6 +27,7 @@ describe('applyServerMessage STATE (#7)', () => {
       status: 'waitingForMove',
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: false, black: true },
+      allHome: { white: false, black: false },
       dice: { a: 6, b: 6, isDouble: true, remaining: [6, 6, 6, 6] },
     })
 
@@ -46,9 +47,29 @@ describe('applyServerMessage STATE (#7)', () => {
       status: 'waitingForRoll',
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false },
     })
 
     expect(gameState.dice).toBeNull()
+  })
+
+  test('gameStore_initial_allHomeIsFalse', () => {
+    // До первого STATE никто не в фазе сброса — плашка счётчика скрыта.
+    expect(gameState.allHome).toEqual({ white: false, black: false })
+  })
+
+  test('gameStore_onSTATE_updatesAllHome', () => {
+    applyServerMessage({
+      type: 'STATE',
+      board: Array(24).fill(0),
+      turn: 'white',
+      status: 'waitingForMove',
+      borneOff: { white: 4, black: 0 },
+      isFirstMove: { white: false, black: false },
+      allHome: { white: true, black: false },
+    })
+
+    expect(gameState.allHome).toEqual({ white: true, black: false })
   })
 })
 
@@ -130,6 +151,7 @@ describe('applyServerMessage GAME_OVER (#9)', () => {
       status: 'waitingForMove',
       borneOff: { white: 12, black: 0 },
       isFirstMove: { white: false, black: false },
+      allHome: { white: true, black: false },
     })
     applyServerMessage({
       type: 'LEGAL_MOVES',
@@ -174,6 +196,7 @@ describe('applyServerMessage ERROR (#10)', () => {
       status: 'waitingForMove',
       borneOff: { white: 1, black: 2 },
       isFirstMove: { white: false, black: true },
+      allHome: { white: false, black: false },
       dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
     })
     applyServerMessage({
@@ -204,6 +227,7 @@ describe('applyServerMessage started flag (#34b)', () => {
       status: 'waitingForRoll' as const,
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false } as const,
     }
   }
 
