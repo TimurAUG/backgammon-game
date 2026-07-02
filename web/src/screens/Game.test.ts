@@ -338,3 +338,21 @@ describe('Game chat panel (#40)', () => {
     expect(onAction).toHaveBeenCalledWith({ type: 'CHAT', text: 'привет' })
   })
 })
+
+describe('Game bear-off counter (#52)', () => {
+  test('Game_colorAllHome_showsRemainingCounter', () => {
+    applyServerMessage(
+      stateFixture({ allHome: { white: true, black: false }, borneOff: { white: 4, black: 0 } }),
+    )
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('bear-off-remaining-white')).toHaveTextContent('11/15')
+  })
+
+  test('Game_noneAllHome_noBearOffCounter', () => {
+    applyServerMessage(stateFixture()) // начальная позиция — ни у кого не все дома
+    render(Game, { props: noop })
+
+    expect(screen.queryByTestId('bear-off-counter')).toBeNull()
+  })
+})
