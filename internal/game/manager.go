@@ -515,6 +515,10 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 			White: s.IsFirstMove[domain.White],
 			Black: s.IsFirstMove[domain.Black],
 		},
+		AllHome: &protocol.AllHomePayload{
+			White: domain.AllInHome(s.Board, domain.White),
+			Black: domain.AllInHome(s.Board, domain.Black),
+		},
 	}
 	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
 		msg.Dice = dicePayload(s.Dice)
