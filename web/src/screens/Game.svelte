@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActionBar from '../components/ActionBar.svelte'
+  import BearOffCounter from '../components/BearOffCounter.svelte'
   import Board from '../components/Board.svelte'
   import Dice from '../components/Dice.svelte'
   import GameOver from '../components/GameOver.svelte'
@@ -136,6 +137,7 @@
     onMove={handleMove}
   />
   <aside class="side">
+    <BearOffCounter borneOff={gameState.borneOff} allHome={gameState.allHome} />
     <Dice dice={gameState.dice} />
     {#if gameState.myColor !== null}
       <ActionBar
