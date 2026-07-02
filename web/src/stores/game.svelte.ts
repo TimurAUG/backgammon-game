@@ -21,6 +21,9 @@ export interface GameStoreState {
   status: GameStatus
   borneOff: { white: number; black: number }
   isFirstMove: { white: boolean; black: boolean }
+  // Все шашки цвета в доме (фаза сброса) — приходит из STATE (домен AllInHome).
+  // Клиент показывает счётчик оставшихся к сбросу только когда allHome[c].
+  allHome: { white: boolean; black: boolean }
   dice: Dice | null
   legalMoves: Move[]
   // Достижимые цели для подсветки прогресса хода (составные ходы одной шашкой).
@@ -42,6 +45,7 @@ function initialGameState(): GameStoreState {
     status: 'waitingForRoll',
     borneOff: { white: 0, black: 0 },
     isFirstMove: { white: true, black: true },
+    allHome: { white: false, black: false },
     dice: null,
     legalMoves: [],
     reach: [],
@@ -69,6 +73,7 @@ export function applyServerMessage(msg: ServerMessage): void {
       gameState.status = msg.status
       gameState.borneOff = msg.borneOff
       gameState.isFirstMove = msg.isFirstMove
+      gameState.allHome = msg.allHome
       gameState.dice = msg.dice ?? null
       gameState.started = true
       break

@@ -16,6 +16,7 @@ export function stateFixture(overrides: Partial<Omit<StateMessage, 'type'>> = {}
     status: 'waitingForRoll',
     borneOff: { white: 0, black: 0 },
     isFirstMove: { white: true, black: true },
+    allHome: { white: false, black: false },
     ...overrides,
   }
 }
