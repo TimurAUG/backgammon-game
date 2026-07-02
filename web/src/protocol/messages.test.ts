@@ -40,6 +40,7 @@ describe('parseServerMessage', () => {
       status: 'waitingForRoll',
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false },
       dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
     })
 
@@ -51,6 +52,7 @@ describe('parseServerMessage', () => {
     expect(msg.status).toBe('waitingForRoll')
     expect(msg.borneOff).toEqual({ white: 0, black: 0 })
     expect(msg.isFirstMove).toEqual({ white: true, black: true })
+    expect(msg.allHome).toEqual({ white: false, black: false })
     expect(msg.dice).toEqual({ a: 3, b: 5, isDouble: false, remaining: [3, 5] })
   })
 

@@ -22,10 +22,10 @@ web/
     protocol/messages.ts — TS-зеркало internal/protocol/messages.go
     transport/ws.ts      — WSClient (connect/send/onMessage/реконнект)
     stores/
-      game.ts            — board/turn/dice/borneOff/status/isFirstMove/legalMoves/gameOver
+      game.ts            — board/turn/dice/borneOff/status/isFirstMove/allHome/legalMoves/gameOver
       connection.ts      — idle | connecting | connected | reconnecting | error
     screens/             — Connect, Game, GameOver
-    components/          — Board, Checker, Dice, ActionBar, GameOver
+    components/          — Board, Checker, Dice, BearOffCounter, ActionBar, GameOver
     lib/geometry.ts      — координаты SVG для пункта/шашки
   tests/                 — общие фикстуры, mock WebSocket
 ```

@@ -74,6 +74,15 @@ type IsFirstMovePayload struct {
 	Black bool `json:"black"`
 }
 
+// AllHomePayload — флаг «все шашки цвета в его доме» (фаза сброса) для
+// каждого цвета. Значение доменного предиката AllInHome. Нужен клиенту,
+// чтобы показывать счётчик оставшихся к сбросу шашек только в фазе сброса,
+// не дублируя правило «все дома» на клиенте.
+type AllHomePayload struct {
+	White bool `json:"white"`
+	Black bool `json:"black"`
+}
+
 // FirstRollPayload — индивидуальные броски обоих цветов при определении
 // первого хода (кто больше — ходит первым). Шлётся в FIRST_ROLL, чтобы
 // клиент показал «кто сколько бросил».
@@ -96,6 +105,7 @@ type ServerMessage struct {
 	Dice        *DicePayload        `json:"dice,omitempty"`
 	BorneOff    *BorneOffPayload    `json:"borneOff,omitempty"`
 	IsFirstMove *IsFirstMovePayload `json:"isFirstMove,omitempty"`
+	AllHome     *AllHomePayload     `json:"allHome,omitempty"`
 	FirstRoll   *FirstRollPayload   `json:"firstRoll,omitempty"`
 	Moves       []MovePayload       `json:"moves,omitempty"`
 	Reach       []ReachPayload      `json:"reach,omitempty"`

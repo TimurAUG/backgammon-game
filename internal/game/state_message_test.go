@@ -53,6 +53,38 @@ func TestStateMessage_IncludesBorneOffAndIsFirstMove(t *testing.T) {
 	require.True(t, parsed.IsFirstMove.Black, "black ещё не ходил")
 }
 
+// TestStateMessage_IncludesAllHome фиксирует требование nardy-protocol § STATE:
+// STATE обязан содержать поле allHome — флаг «все шашки цвета в его доме»
+// (фаза сброса) для каждого цвета. Значение = domain.AllInHome. Без него
+// клиент не может показать счётчик оставшихся к сбросу шашек только в фазе
+// сброса, не дублируя правило «все дома» на клиенте (запрещено архитектурой).
+func TestStateMessage_IncludesAllHome(t *testing.T) {
+	var b domain.Board
+	b[5] = 11   // 11 белых на пункте 6 — все белые в доме (1–6)
+	b[11] = -15 // 15 чёрных на пункте 12 (голова) — вне дома чёрных (13–18)
+	s := domain.GameState{
+		Board:    b,
+		Turn:     domain.White,
+		Status:   domain.StatusWaitingForMove,
+		BorneOff: [2]uint8{4, 0},
+	}
+
+	raw, err := json.Marshal(game.StateMessage(s))
+	require.NoError(t, err)
+
+	var parsed struct {
+		AllHome *struct {
+			White bool `json:"white"`
+			Black bool `json:"black"`
+		} `json:"allHome"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &parsed))
+
+	require.NotNil(t, parsed.AllHome, "STATE должен содержать поле allHome")
+	require.True(t, parsed.AllHome.White, "все белые шашки в доме (1–6) → allHome.white=true")
+	require.False(t, parsed.AllHome.Black, "чёрные ещё на голове (пункт 12) вне дома → allHome.black=false")
+}
+
 // TestStateMessage_RemainingIsJSONNumberArray фиксирует контракт nardy-protocol:
 // dice.remaining — массив чисел ([int]), а не base64-строка. Регрессия: поле
 // protocol.DicePayload.Remaining было []uint8, и encoding/json кодирует такие
