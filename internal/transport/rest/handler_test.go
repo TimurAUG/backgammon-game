@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/TimurAUG/backgammon-game/internal/auth"
 	"github.com/TimurAUG/backgammon-game/internal/game"
 	"github.com/TimurAUG/backgammon-game/internal/transport/rest"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ type credsBody struct {
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	rest.NewHandler(game.NewManager()).Register(mux)
+	rest.NewHandler(game.NewManager(), auth.NewMemoryStore()).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

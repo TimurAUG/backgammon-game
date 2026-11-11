@@ -3,8 +3,8 @@
 // Слушает HTTP на addr и поднимает WS-handler в /ws.
 //
 // Storage выбирается по переменной окружения:
-//   - DATABASE_URL задан → PostgresStorage (InitSchema вызывается при старте).
-//   - иначе → in-memory.
+//   - DATABASE_URL задан → PostgresStorage + auth.PostgresStore (InitSchema при старте).
+//   - иначе → in-memory games + auth.MemoryStore.
 //
 // Источник случайности для бросков — crypto/rand.
 package main
@@ -21,6 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/TimurAUG/backgammon-game/internal/auth"
 	"github.com/TimurAUG/backgammon-game/internal/game"
 	"github.com/TimurAUG/backgammon-game/internal/transport/rest"
 	"github.com/TimurAUG/backgammon-game/internal/transport/static"
@@ -31,9 +32,9 @@ func main() {
 	addr := flag.String("addr", ":8080", "адрес HTTP-сервера")
 	flag.Parse()
 
-	mgr, cleanup, err := buildManager(context.Background())
+	mgr, authStore, cleanup, err := buildDeps(context.Background())
 	if err != nil {
-		log.Fatalf("init manager: %v", err)
+		log.Fatalf("init: %v", err)
 	}
 	defer cleanup()
 
@@ -47,7 +48,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
-	rest.NewHandler(mgr).Register(mux)
+	rest.NewHandler(mgr, authStore).Register(mux)
 
 	// В проде (Docker/Fly) отдаём собранный SPA из STATIC_DIR с того же origin,
 	// что и /ws и /api — тогда wss и проверка Origin работают без CORS/прокси.
@@ -69,21 +70,26 @@ func main() {
 	}
 }
 
-func buildManager(ctx context.Context) (*game.Manager, func(), error) {
+func buildDeps(ctx context.Context) (*game.Manager, auth.Store, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Print("storage: in-memory (DATABASE_URL не задан)")
-		return game.NewManager(), func() {}, nil
+		return game.NewManager(), auth.NewMemoryStore(), func() {}, nil
 	}
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	storage := game.NewPostgresStorage(pool)
-	if err := storage.InitSchema(ctx); err != nil {
+	gameStore := game.NewPostgresStorage(pool)
+	if err := gameStore.InitSchema(ctx); err != nil {
 		pool.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	authStore := auth.NewPostgresStore(pool)
+	if err := authStore.InitSchema(ctx); err != nil {
+		pool.Close()
+		return nil, nil, nil, err
 	}
 	log.Print("storage: postgres")
-	return game.NewManagerWithStorage(storage, crand.Reader), pool.Close, nil
+	return game.NewManagerWithStorage(gameStore, crand.Reader), authStore, pool.Close, nil
 }
