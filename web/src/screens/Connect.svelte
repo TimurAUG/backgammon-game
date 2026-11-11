@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createGame, joinGame } from '../lib/api'
+  import { createGame, joinGame, login, me, register } from '../lib/api'
   import { saveCredentials, type Credentials } from '../lib/credentials'
 
   let {
@@ -9,11 +9,64 @@
 
   let gameId = $state('')
   let token = $state('')
+  let nick = $state('')
+  let password = $state('')
+  let sessionNick = $state<string | null>(null)
   let created = $state<Credentials | null>(null)
   let error = $state('')
+  let sessionChecked = $state(false)
+
+  $effect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await me()
+        if (!cancelled) sessionNick = result.nick
+      } catch {
+        // 401 / network — stay anonymous; show login/register.
+      } finally {
+        if (!cancelled) sessionChecked = true
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  })
 
   function inviteLink(id: string): string {
     return `${location.origin}/?game=${id}`
+  }
+
+  function authErrorMessage(err: unknown): string {
+    const status = typeof err === 'object' && err !== null && 'status' in err
+      ? Number((err as { status: unknown }).status)
+      : NaN
+    if (status === 409) return 'Этот ник уже занят'
+    if (status === 401) return 'Неверный ник или пароль'
+    if (status === 400) return 'Проверьте ник и пароль'
+    return 'Не удалось выполнить вход'
+  }
+
+  async function handleRegister(): Promise<void> {
+    error = ''
+    try {
+      const result = await register(nick, password)
+      sessionNick = result.nick
+      password = ''
+    } catch (err) {
+      error = authErrorMessage(err)
+    }
+  }
+
+  async function handleLogin(): Promise<void> {
+    error = ''
+    try {
+      const result = await login(nick, password)
+      sessionNick = result.nick
+      password = ''
+    } catch (err) {
+      error = authErrorMessage(err)
+    }
   }
 
   async function handleCreate(): Promise<void> {
@@ -59,6 +112,27 @@
 
 <main class="connect">
   <h1>Длинные нарды</h1>
+
+  {#if sessionChecked}
+    {#if sessionNick !== null}
+      <p class="session" data-testid="session-nick">{sessionNick}</p>
+    {:else}
+      <section class="auth">
+        <label>
+          Ник
+          <input type="text" bind:value={nick} autocomplete="username" />
+        </label>
+        <label>
+          Пароль
+          <input type="password" bind:value={password} autocomplete="current-password" />
+        </label>
+        <div class="auth-actions">
+          <button type="button" onclick={handleLogin}>Log in</button>
+          <button type="button" onclick={handleRegister}>Register</button>
+        </div>
+      </section>
+    {/if}
+  {/if}
 
   {#if created !== null}
     <p class="hint">Игра создана. Отправь сопернику ссылку:</p>
@@ -111,6 +185,32 @@
   .hint {
     font-size: 14px;
     color: #5a3a1e;
+  }
+  .session {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+  .auth {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+  .auth-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .auth-actions button {
+    flex: 1;
+    background: #c19a6b;
+    color: #2a1e10;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
   }
   .primary {
     width: 100%;
