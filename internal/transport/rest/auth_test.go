@@ -328,11 +328,191 @@ func TestRegister_InvalidInput_Returns400(t *testing.T) {
 	}
 }
 
-// Card #2 — create/join still open without session (until #3).
-func TestCreateJoin_WithoutSession_StillOK(t *testing.T) {
-	srv, _ := newAuthServer(t)
-	resp, err := http.Post(srv.URL+"/api/games", "application/json", nil)
-	require.NoError(t, err)
+// --- Card #3 — create/join require a valid session cookie ---
+
+func newGateServer(t *testing.T) (*httptest.Server, *game.Manager, *auth.MemoryStore) {
+	t.Helper()
+	store := auth.NewMemoryStore()
+	mgr := game.NewManager()
+	mux := http.NewServeMux()
+	rest.NewHandler(mgr, store).Register(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, mgr, store
+}
+
+func registerCookie(t *testing.T, srv *httptest.Server, nick string) *http.Cookie {
+	t.Helper()
+	resp := postJSON(t, srv.URL+"/api/register", `{"nick":"`+nick+`","password":"password1"}`, nil)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	c := sessionCookie(resp)
+	require.NotNil(t, c)
+	return c
+}
+
+func decodeCreds(t *testing.T, resp *http.Response) credsBody {
+	t.Helper()
+	var body credsBody
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+// Card #3 AC1 / SPEC [NEW 2026-11-11 — card #5] — no session → create 401, no game.
+func TestCreate_NoSession_Returns401(t *testing.T) {
+	srv, mgr, _ := newGateServer(t)
+
+	resp := postJSON(t, srv.URL+"/api/games", `{}`, nil)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, 0, mgr.ActiveCount(), "no game must be created without a session")
+}
+
+// Card #3 AC2 — no session → join 401; seat remains free for an authenticated join.
+func TestJoin_NoSession_Returns401(t *testing.T) {
+	srv, _, _ := newGateServer(t)
+	cookie := registerCookie(t, srv, "CreatorA")
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{cookie})
+	created := decodeCreds(t, createResp)
+	createResp.Body.Close()
+	require.Equal(t, http.StatusOK, createResp.StatusCode)
+
+	anon := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, nil)
+	defer anon.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, anon.StatusCode)
+
+	joiner := registerCookie(t, srv, "JoinerA")
+	okJoin := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, []*http.Cookie{joiner})
+	defer okJoin.Body.Close()
+	require.Equal(t, http.StatusOK, okJoin.StatusCode, "seat must still be free after anonymous 401")
+}
+
+// Card #3 AC3 — valid session → create returns gameId + seat token.
+func TestCreate_WithSession_ReturnsGameIDAndToken(t *testing.T) {
+	srv, _, _ := newGateServer(t)
+	cookie := registerCookie(t, srv, "CreatorB")
+
+	resp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{cookie})
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeCreds(t, resp)
+	require.NotEmpty(t, body.GameID)
+	require.NotEmpty(t, body.Token)
+}
+
+// Card #3 AC3 — valid session → join returns a distinct seat token.
+func TestJoin_WithSession_ReturnsToken(t *testing.T) {
+	srv, _, _ := newGateServer(t)
+	creator := registerCookie(t, srv, "CreatorC")
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{creator})
+	created := decodeCreds(t, createResp)
+	createResp.Body.Close()
+
+	joiner := registerCookie(t, srv, "JoinerC")
+	resp := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, []*http.Cookie{joiner})
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeCreds(t, resp)
+	require.Equal(t, created.GameID, body.GameID)
+	require.NotEmpty(t, body.Token)
+	require.NotEqual(t, created.Token, body.Token)
+}
+
+// Card #3 edge — expired session cookie → 401 on create/join.
+func TestCreateJoin_ExpiredSession_Returns401(t *testing.T) {
+	srv, mgr, store := newGateServer(t)
+	u, err := store.CreateUser(t.Context(), "ExpiredUser", "password1")
+	require.NoError(t, err)
+	past := time.Now().UTC().Add(-time.Minute)
+	sess, err := store.CreateSession(t.Context(), u.ID, past)
+	require.NoError(t, err)
+	expired := []*http.Cookie{{Name: auth.CookieName, Value: sess.ID}}
+
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, expired)
+	defer createResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
+	require.Equal(t, 0, mgr.ActiveCount())
+
+	// Seed a real game with a fresh session, then join with expired.
+	fresh := registerCookie(t, srv, "SeedExpired")
+	seed := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{fresh})
+	created := decodeCreds(t, seed)
+	seed.Body.Close()
+
+	joinResp := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, expired)
+	defer joinResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, joinResp.StatusCode)
+}
+
+// Card #3 edge — unknown/forged session cookie → 401 on create/join.
+func TestCreateJoin_UnknownSession_Returns401(t *testing.T) {
+	srv, mgr, _ := newGateServer(t)
+	junk := []*http.Cookie{{Name: auth.CookieName, Value: "forged-session-id"}}
+
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, junk)
+	defer createResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
+	require.Equal(t, 0, mgr.ActiveCount())
+
+	fresh := registerCookie(t, srv, "SeedUnknown")
+	seed := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{fresh})
+	created := decodeCreds(t, seed)
+	seed.Body.Close()
+
+	joinResp := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, junk)
+	defer joinResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, joinResp.StatusCode)
+}
+
+// Card #3 edge — empty nardy_session value → treated as absent → 401.
+func TestCreateJoin_EmptySessionCookie_Returns401(t *testing.T) {
+	srv, mgr, _ := newGateServer(t)
+	empty := []*http.Cookie{{Name: auth.CookieName, Value: ""}}
+
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, empty)
+	defer createResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
+	require.Equal(t, 0, mgr.ActiveCount())
+
+	fresh := registerCookie(t, srv, "SeedEmpty")
+	seed := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{fresh})
+	created := decodeCreds(t, seed)
+	seed.Body.Close()
+
+	joinResp := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, empty)
+	defer joinResp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, joinResp.StatusCode)
+}
+
+// Card #3 edge — valid session + unknown gameId → 404 (not 401).
+func TestJoin_WithSession_UnknownGame_Returns404(t *testing.T) {
+	srv, _, _ := newGateServer(t)
+	cookie := registerCookie(t, srv, "Joiner404")
+
+	resp := postJSON(t, srv.URL+"/api/games/no-such-game/join", `{}`, []*http.Cookie{cookie})
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// Card #3 edge — valid session + full room → 409 (not 401).
+func TestJoin_WithSession_FullGame_Returns409(t *testing.T) {
+	srv, _, _ := newGateServer(t)
+	creator := registerCookie(t, srv, "CreatorFull")
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{creator})
+	created := decodeCreds(t, createResp)
+	createResp.Body.Close()
+
+	joiner1 := registerCookie(t, srv, "JoinerFull1")
+	r1 := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, []*http.Cookie{joiner1})
+	r1.Body.Close()
+	require.Equal(t, http.StatusOK, r1.StatusCode)
+
+	joiner2 := registerCookie(t, srv, "JoinerFull2")
+	r2 := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, []*http.Cookie{joiner2})
+	defer r2.Body.Close()
+	require.Equal(t, http.StatusConflict, r2.StatusCode)
 }

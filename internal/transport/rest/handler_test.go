@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/TimurAUG/backgammon-game/internal/auth"
@@ -14,11 +16,14 @@ import (
 
 // TDD plan #41 — REST invite: POST /api/games (создать), POST
 // /api/games/{id}/join (войти по ссылке). Токены генерит сервер.
+// Card #3 — create/join helpers attach a valid nardy_session cookie.
 
 type credsBody struct {
 	GameID string `json:"gameId"`
 	Token  string `json:"token"`
 }
+
+var inviteNickSeq atomic.Int32
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -29,10 +34,21 @@ func newServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
+func inviteSession(t *testing.T, srv *httptest.Server) *http.Cookie {
+	t.Helper()
+	nick := "invite" + strconv.Itoa(int(inviteNickSeq.Add(1)))
+	resp := postJSON(t, srv.URL+"/api/register", `{"nick":"`+nick+`","password":"password1"}`, nil)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	c := sessionCookie(resp)
+	require.NotNil(t, c)
+	return c
+}
+
 func createGame(t *testing.T, srv *httptest.Server) credsBody {
 	t.Helper()
-	resp, err := http.Post(srv.URL+"/api/games", "application/json", nil)
-	require.NoError(t, err)
+	cookie := inviteSession(t, srv)
+	resp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{cookie})
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var body credsBody
@@ -42,9 +58,8 @@ func createGame(t *testing.T, srv *httptest.Server) credsBody {
 
 func join(t *testing.T, srv *httptest.Server, gameID string) *http.Response {
 	t.Helper()
-	resp, err := http.Post(srv.URL+"/api/games/"+gameID+"/join", "application/json", nil)
-	require.NoError(t, err)
-	return resp
+	cookie := inviteSession(t, srv)
+	return postJSON(t, srv.URL+"/api/games/"+gameID+"/join", `{}`, []*http.Cookie{cookie})
 }
 
 func TestHandler_CreateGame_ReturnsGameIDAndToken(t *testing.T) {
