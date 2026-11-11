@@ -116,6 +116,9 @@ func TestLogin_ValidPair_SetsNewSessionCookie(t *testing.T) {
 	r2 := postJSON(t, srv.URL+"/api/login", `{"nick":"bob","password":"password1"}`, nil)
 	defer r2.Body.Close()
 	require.Equal(t, http.StatusOK, r2.StatusCode)
+	loginRaw, err := io.ReadAll(r2.Body)
+	require.NoError(t, err)
+	require.NotContains(t, string(loginRaw), "password1")
 	c2 := sessionCookie(r2)
 	require.NotNil(t, c2)
 	require.NotEqual(t, c1.Value, c2.Value)
@@ -207,6 +210,74 @@ func TestLogout_NoCookie_Idempotent200(t *testing.T) {
 	c := sessionCookie(resp)
 	require.NotNil(t, c)
 	require.True(t, c.MaxAge < 0 || c.Value == "")
+}
+
+// Card #2 edge — logout with junk/invalid session cookie → 200 + clear Set-Cookie.
+func TestLogout_InvalidCookie_Idempotent200(t *testing.T) {
+	srv, _ := newAuthServer(t)
+	junk := &http.Cookie{Name: auth.CookieName, Value: "not-a-real-session"}
+	resp := postJSON(t, srv.URL+"/api/logout", `{}`, []*http.Cookie{junk})
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	c := sessionCookie(resp)
+	require.NotNil(t, c)
+	require.True(t, c.MaxAge < 0 || c.Value == "")
+}
+
+// Card #2 edge (Code Review) — forged/unknown session cookie → /api/me 401.
+func TestMe_UnknownCookie_Returns401(t *testing.T) {
+	srv, _ := newAuthServer(t)
+	resp := getMe(t, srv, []*http.Cookie{{Name: auth.CookieName, Value: "forged-session-id"}})
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+// Card #2 AC1 — Secure cookie when X-Forwarded-Proto is https; plain HTTP is not Secure.
+func TestRegister_CookieSecure_FollowsHTTPS(t *testing.T) {
+	store := auth.NewMemoryStore()
+	mux := http.NewServeMux()
+	rest.NewHandler(game.NewManager(), store).Register(mux)
+
+	t.Run("X-Forwarded-Proto https → Secure", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader(`{"nick":"HttpsAnn","password":"password1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		c := sessionCookie(rec.Result())
+		require.NotNil(t, c)
+		require.True(t, c.Secure)
+	})
+
+	t.Run("plain HTTP → not Secure", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/register", strings.NewReader(`{"nick":"PlainAnn","password":"password1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		c := sessionCookie(rec.Result())
+		require.NotNil(t, c)
+		require.False(t, c.Secure)
+	})
+}
+
+// Card #2 edge (Code Review) — padded nick stores and returns trimmed nick.
+func TestRegister_PaddedNick_StoresAndReturnsTrimmed(t *testing.T) {
+	srv, store := newAuthServer(t)
+	resp := postJSON(t, srv.URL+"/api/register", `{"nick":"  Ann  ","password":"password1"}`, nil)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	var body nickBody
+	require.NoError(t, json.Unmarshal(raw, &body))
+	require.Equal(t, "Ann", body.Nick)
+
+	u, err := store.Authenticate(t.Context(), "Ann", "password1")
+	require.NoError(t, err)
+	require.Equal(t, "Ann", u.Nick)
 }
 
 // Card #2 edge — expired session → /api/me 401.
