@@ -14,11 +14,22 @@
   interface Props {
     onAction: (msg: ClientMessage) => void
     onNewGame: () => void
+    onLeave: () => void
     gameId?: string | null
     token?: string | null
+    creatingNewGame?: boolean
+    newGameError?: string
   }
 
-  let { onAction, onNewGame, gameId = null, token = null }: Props = $props()
+  let {
+    onAction,
+    onNewGame,
+    onLeave,
+    gameId = null,
+    token = null,
+    creatingNewGame = false,
+    newGameError = '',
+  }: Props = $props()
 
   // Первый бросок уже состоялся, если был FIRST_ROLL, или кубики на столе,
   // или кто-то уже завершил свой первый ход. После розыгрыша победитель
@@ -111,7 +122,7 @@
         </button>
       </div>
     {/if}
-    <button type="button" class="leave" data-testid="switch-game" onclick={onNewGame}>
+    <button type="button" class="leave" data-testid="switch-game" onclick={onLeave}>
       Сменить игру
     </button>
   </header>
@@ -150,7 +161,13 @@
       />
     {/if}
   </aside>
-  <GameOver gameOver={gameState.gameOver} myColor={gameState.myColor} {onNewGame} />
+  <GameOver
+    gameOver={gameState.gameOver}
+    myColor={gameState.myColor}
+    {onNewGame}
+    creating={creatingNewGame}
+    error={newGameError}
+  />
   <Chat myColor={gameState.myColor} {onAction} />
 </main>
 

@@ -1,11 +1,13 @@
 // FRONTEND_SPEC #24b — App.svelte: маршрутизация Connect ↔ Game и
 // проводка WSClient (onMessage→gameStore, onAction→send, onNewGame→сброс).
 // createClient инжектируется: реальный WSClient поверх MockWebSocket.
+// Card #6 — GameOver «Новая игра» create-and-enter via createGame().
 
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { createGame, me } from './lib/api'
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
@@ -17,6 +19,15 @@ import { stateFixture } from '../tests/fixtures'
 
 import App from './App.svelte'
 
+vi.mock('./lib/api', () => ({
+  createGame: vi.fn(),
+  joinGame: vi.fn(),
+  register: vi.fn(),
+  login: vi.fn(),
+  me: vi.fn(),
+  logout: vi.fn(),
+}))
+
 beforeEach(() => {
   localStorage.clear()
   resetGameState()
@@ -25,6 +36,10 @@ beforeEach(() => {
   resetChat()
   MockWebSocket.reset()
   window.history.replaceState(null, '', '/')
+  vi.mocked(createGame).mockReset()
+  vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok-new' })
+  vi.mocked(me).mockReset()
+  vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
 })
 
 function testCreateClient(creds: Credentials): WSClient {
@@ -92,20 +107,68 @@ describe('App WSClient wiring (#24b)', () => {
   })
 })
 
-describe('App new game (#24b)', () => {
-  test('App_newGame_clearsCredsAndReturnsToConnect', async () => {
+describe('App new game after game over (#22 / card #6)', () => {
+  // With ?game= in the URL Connect hides the manual form (join-invite).
+  // Seed matching saved creds so App auto-connects into the finished session.
+  async function reachGameOverWithQuery(gameId = 'g-old', token = 'tok-old'): Promise<MockWebSocket> {
+    saveCredentials({ gameId, token })
+    window.history.replaceState(null, '', `/?game=${gameId}`)
     render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
-
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
     ws.receive(stateFixture())
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    await fireEvent.click(await screen.findByTestId('action-new-game'))
+    await screen.findByTestId('action-new-game')
+    return ws
+  }
 
-    expect(screen.getByLabelText('ID игры')).toBeInTheDocument()
+  test('App_newGame_afterGameOver_createsAndEntersFreshGame', async () => {
+    await reachGameOverWithQuery('g-old', 'tok-old')
+
+    await fireEvent.click(screen.getByTestId('action-new-game'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('game-over')).toBeNull()
+      expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    })
+    expect(createGame).toHaveBeenCalledOnce()
+    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok-new' })
+    expect(MockWebSocket.instances.length).toBeGreaterThanOrEqual(2)
+    const latest = MockWebSocket.last()
+    latest.acceptOpen()
+    expect(latest.sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-new', token: 'tok-new' }),
+    )
+    expect(location.search).toContain('game=g-new')
+    expect(location.search).not.toContain('g-old')
+    expect(location.search).not.toContain('token')
+  })
+
+  test('App_newGame_createFails_keepsGameOverAndShowsError', async () => {
+    vi.mocked(createGame).mockRejectedValue(Object.assign(new Error('fail'), { status: 500 }))
+    await reachGameOverWithQuery()
+
+    await fireEvent.click(screen.getByTestId('action-new-game'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось создать игру')
+    expect(screen.getByTestId('game-over')).toBeInTheDocument()
+    expect(screen.queryByLabelText('ID игры')).toBeNull()
+    expect(loadCredentials()).toEqual({ gameId: 'g-old', token: 'tok-old' })
+    expect(location.search).toContain('game=g-old')
+  })
+
+  test('App_newGame_createUnauthorized_returnsToConnectAndClearsGameQuery', async () => {
+    vi.mocked(createGame).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
+    await reachGameOverWithQuery()
+
+    await fireEvent.click(screen.getByTestId('action-new-game'))
+
+    expect(await screen.findByLabelText('ID игры')).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
     expect(loadCredentials()).toBeNull()
+    expect(location.search).not.toContain('game=')
+    expect(screen.queryByTestId('join-invite')).toBeNull()
   })
 })
 
