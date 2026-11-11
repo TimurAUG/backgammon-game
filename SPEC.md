@@ -92,11 +92,15 @@
 /internal/transport/static   — раздача собранного SPA
 ```
 
+[AMENDED 2026-11-11 — card #5, source card #1] `/internal/transport/rest` also serves user auth: `POST /api/register`, `POST /api/login`, `GET /api/me`, `POST /api/logout`. User and session rows live in the same Postgres as games (`DATABASE_URL` / `InitSchema`); no separate database.
+
 Принципы:
 - `domain` не зависит ни от чего, кроме stdlib. Все правила нард — там.
 - `game` оркеструет сессии: хранит `GameState`, принимает действия, рассылает обновления.
 - `transport` — тонкий слой над `game`.
 - Сервер хранит и валидирует **полное** состояние игры. Клиент получает state после каждого валидного действия.
+
+[NEW 2026-11-11 — card #5, source card #1] **Users, sessions, and auth REST.** A player must be logged in to create or join a game. A user has only nick and password (no email, real name, or other personal data). Nicks are unique case-insensitively (length 3–20). The server stores the password only as a hash (argon2id or bcrypt); plaintext passwords never appear in responses, the database, or logs. Empty nick, out-of-range nick length, or password shorter than 8 characters → `400` and no user row. Duplicate nick on register → `409`. Login with a wrong password or unknown nick → the same `401` (no distinction). A session is a random id in a cookie: HttpOnly, Secure on https, SameSite=Lax, Max-Age 30 days; closing the tab does not clear it; a process restart must not invalidate it (sessions in Postgres). One user may hold several concurrent sessions; logout ends only the current session. Endpoints: `POST /api/register` and `POST /api/login` set the session cookie; `GET /api/me` returns only the nick with a valid cookie else `401`; `POST /api/logout` clears the current cookie/session. Without a valid session cookie, `POST /api/games` and `POST /api/games/{id}/join` return `401` and do not create a game or seat the caller. With a valid session they behave as today and still issue the per-game seat token. WebSocket continues to accept the game seat token (session cookie not required on WS). Move rules, dice, and the JOIN protocol stay unchanged.
 
 ---
 
@@ -336,3 +340,5 @@ Persistence (#36) сохраняет состояние, но `LoadGame` отд�
 - Авторизация в WS-хендшейке (токен в заголовке/cookie, не в URL). Исключение — **личная** ссылка для возврата `?game=<id>&token=<token>`: токен в URL осознанно (иначе нет реконнекта с другого устройства), игрок её не шарит, и фронт вычищает `token` из адресной строки сразу после чтения. Ссылка-**приглашение** сопернику остаётся без токена (только `gameId`).
 - Rate limit на REST.
 - Логирование всех ходов для разбора жалоб.
+
+[AMENDED 2026-11-11 — card #5, source card #1] In addition to the per-game seat token on WS: user passwords are stored only as argon2id or bcrypt hashes; never log or return plaintext passwords. Session cookies are HttpOnly, Secure on https, SameSite=Lax, 30-day lifetime, backed by Postgres so they survive process restart. Create/join game REST endpoints require a valid session cookie (`401` without). WS game-seat auth is unchanged.

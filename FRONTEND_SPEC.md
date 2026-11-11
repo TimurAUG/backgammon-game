@@ -62,6 +62,8 @@ web/
       credentials.ts     — gameId+token в localStorage
       api.ts             — REST invite-клиент (createGame/joinGame)
       sound.ts           — playRollCue() короткий сигнал через Web Audio
+
+[AMENDED 2026-11-11 — card #5, source card #1] `Connect.svelte` also hosts nick + password fields and «Log in» / «Register» actions on the same page (no new screen). `api.ts` covers register/login/me/logout and sends the session cookie (`credentials: 'include'`) on create/join; per-game seat token persistence in `credentials.ts` (`nardy.credentials`) stays as it is after a successful create/join.
   tests/                 — общие тестовые утилиты, mock WebSocket, фикстуры STATE
 ```
 
@@ -89,6 +91,8 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
 
 При наличии сохранённых `gameId`+`token` в `localStorage` — пропускает форму и сразу подключается (см. § 5, реконнект).
 
+[AMENDED 2026-11-11 — card #5, source card #1] On the **same** Connect page (current type and colors; no new screen, pattern, or mockup), the player also sees nick and password fields plus «Log in» and «Register» buttons. Register → `POST /api/register`; Log in → `POST /api/login`. Both rely on the browser storing the session cookie (HttpOnly); closing the tab must not clear that cookie. Create-game and join-game requests include the session cookie (`credentials: 'include'`). No email, real name, or other personal-data fields. Duplicate register surfaces as 409; failed login as the shared 401 — without inventing new layout patterns. Existing invite / manual gameId+token / seat-token localStorage behaviour remains.
+
 ### Game
 
 - **Board** — SVG, 24 пункта (треугольники) + bar + bear-off трей. Рендерится из `gameStore.board`.
@@ -112,6 +116,8 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 - Реконнект — экспоненциальный backoff (1с / 2с / 4с / 8с, потолок 30с). При успешном повторном `open` — снова `JOIN` с теми же `gameId`+`token`, сервер вернёт текущий `STATE`.
 - Токен живёт в `localStorage`. При `ERROR { code: "UNAUTHORIZED" }` — чистим и возвращаем в Connect.
 - `connectionStore` отражает состояние сокета. UI блокирует ActionBar при `reconnecting`.
+
+[NEW 2026-11-11 — card #5, source card #1] User session resilience: the login session cookie is independent of the per-game seat token in `localStorage`. Tab close does not end the user session; after reopening the app, `GET /api/me` with the cookie still returns the nick until expiry or logout. Create/join REST calls must send that cookie; WS still authenticates with the game seat token only.
 
 ## 6. SVG-доска
 
