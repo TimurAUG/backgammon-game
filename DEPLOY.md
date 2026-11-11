@@ -17,7 +17,7 @@
 
 ## Выкладка стейджинга
 
-Обычный выкат — push (или merge) в `develop`. Job `deploy staging` в `.github/workflows/ci.yml` ждёт зелёный `ci` и запускает `flyctl deploy --remote-only`. Приложение берётся из `fly.toml`: `nardy-staging`. На пул-реквесте этот job не запускается.
+Обычный выкат — push (или merge) в `develop`. Workflow `.github/workflows/deploy-staging.yml` на этом push сначала прогоняет те же проверки, что и `ci`, и после них запускает `flyctl deploy --remote-only`. Приложение берётся из `fly.toml`: `nardy-staging`. На пул-реквест этот workflow не подписан, поэтому проверки `deploy staging` там нет.
 
 Статус смотри на том же коммите:
 
