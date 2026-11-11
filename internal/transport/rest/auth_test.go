@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -330,15 +331,42 @@ func TestRegister_InvalidInput_Returns400(t *testing.T) {
 
 // --- Card #3 — create/join require a valid session cookie ---
 
-func newGateServer(t *testing.T) (*httptest.Server, *game.Manager, *auth.MemoryStore) {
+// saveCountingStorage wraps Storage and counts SaveGame calls so create-401
+// tests can assert no game was persisted (ActiveCount stays 0 even after a
+// successful CreateGame — create only SaveGames, it never inserts into active).
+type saveCountingStorage struct {
+	inner game.Storage
+	mu    sync.Mutex
+	saves int
+}
+
+func (s *saveCountingStorage) LoadGame(id string) (*game.Game, bool) {
+	return s.inner.LoadGame(id)
+}
+
+func (s *saveCountingStorage) SaveGame(g *game.Game) error {
+	s.mu.Lock()
+	s.saves++
+	s.mu.Unlock()
+	return s.inner.SaveGame(g)
+}
+
+func (s *saveCountingStorage) SaveCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saves
+}
+
+func newGateServer(t *testing.T) (*httptest.Server, *saveCountingStorage, *auth.MemoryStore) {
 	t.Helper()
 	store := auth.NewMemoryStore()
-	mgr := game.NewManager()
+	counting := &saveCountingStorage{inner: game.NewMemoryStorage()}
+	mgr := game.NewManagerWithStorage(counting, nil)
 	mux := http.NewServeMux()
 	rest.NewHandler(mgr, store).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, mgr, store
+	return srv, counting, store
 }
 
 func registerCookie(t *testing.T, srv *httptest.Server, nick string) *http.Cookie {
@@ -360,13 +388,13 @@ func decodeCreds(t *testing.T, resp *http.Response) credsBody {
 
 // Card #3 AC1 / SPEC [NEW 2026-11-11 — card #5] — no session → create 401, no game.
 func TestCreate_NoSession_Returns401(t *testing.T) {
-	srv, mgr, _ := newGateServer(t)
+	srv, storage, _ := newGateServer(t)
 
 	resp := postJSON(t, srv.URL+"/api/games", `{}`, nil)
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	require.Equal(t, 0, mgr.ActiveCount(), "no game must be created without a session")
+	require.Equal(t, 0, storage.SaveCount(), "no game must be persisted without a session")
 }
 
 // Card #3 AC2 — no session → join 401; seat remains free for an authenticated join.
@@ -423,7 +451,7 @@ func TestJoin_WithSession_ReturnsToken(t *testing.T) {
 
 // Card #3 edge — expired session cookie → 401 on create/join.
 func TestCreateJoin_ExpiredSession_Returns401(t *testing.T) {
-	srv, mgr, store := newGateServer(t)
+	srv, storage, store := newGateServer(t)
 	u, err := store.CreateUser(t.Context(), "ExpiredUser", "password1")
 	require.NoError(t, err)
 	past := time.Now().UTC().Add(-time.Minute)
@@ -434,7 +462,7 @@ func TestCreateJoin_ExpiredSession_Returns401(t *testing.T) {
 	createResp := postJSON(t, srv.URL+"/api/games", `{}`, expired)
 	defer createResp.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
-	require.Equal(t, 0, mgr.ActiveCount())
+	require.Equal(t, 0, storage.SaveCount(), "no game must be persisted with an expired session")
 
 	// Seed a real game with a fresh session, then join with expired.
 	fresh := registerCookie(t, srv, "SeedExpired")
@@ -449,13 +477,13 @@ func TestCreateJoin_ExpiredSession_Returns401(t *testing.T) {
 
 // Card #3 edge — unknown/forged session cookie → 401 on create/join.
 func TestCreateJoin_UnknownSession_Returns401(t *testing.T) {
-	srv, mgr, _ := newGateServer(t)
+	srv, storage, _ := newGateServer(t)
 	junk := []*http.Cookie{{Name: auth.CookieName, Value: "forged-session-id"}}
 
 	createResp := postJSON(t, srv.URL+"/api/games", `{}`, junk)
 	defer createResp.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
-	require.Equal(t, 0, mgr.ActiveCount())
+	require.Equal(t, 0, storage.SaveCount(), "no game must be persisted with an unknown session")
 
 	fresh := registerCookie(t, srv, "SeedUnknown")
 	seed := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{fresh})
@@ -469,13 +497,13 @@ func TestCreateJoin_UnknownSession_Returns401(t *testing.T) {
 
 // Card #3 edge — empty nardy_session value → treated as absent → 401.
 func TestCreateJoin_EmptySessionCookie_Returns401(t *testing.T) {
-	srv, mgr, _ := newGateServer(t)
+	srv, storage, _ := newGateServer(t)
 	empty := []*http.Cookie{{Name: auth.CookieName, Value: ""}}
 
 	createResp := postJSON(t, srv.URL+"/api/games", `{}`, empty)
 	defer createResp.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, createResp.StatusCode)
-	require.Equal(t, 0, mgr.ActiveCount())
+	require.Equal(t, 0, storage.SaveCount(), "no game must be persisted with an empty session cookie")
 
 	fresh := registerCookie(t, srv, "SeedEmpty")
 	seed := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{fresh})
