@@ -15,7 +15,11 @@ jobs:
           go-version-file: go.mod
 
       - name: Go tests
-        run: go test -short ./...
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: |
+          go list ./... | grep -vE '/internal/(auth|game)($|/)' | xargs go test -short
+          go test ./internal/auth/... ./internal/game/...
 
       - uses: actions/setup-node@v4
         with:
