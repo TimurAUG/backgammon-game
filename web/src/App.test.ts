@@ -170,6 +170,55 @@ describe('App new game after game over (#22 / card #6)', () => {
     expect(location.search).not.toContain('game=')
     expect(screen.queryByTestId('join-invite')).toBeNull()
   })
+
+  // Edge: double-press while create is in flight — App must set creatingNewGame
+  // so the button disables and a second click cannot call createGame again.
+  test('App_newGame_doublePressWhileInFlight_callsCreateOnceAndDisablesButton', async () => {
+    let resolveCreate!: (value: Credentials) => void
+    const pending = new Promise<Credentials>((resolve) => {
+      resolveCreate = resolve
+    })
+    vi.mocked(createGame).mockReturnValue(pending)
+
+    await reachGameOverWithQuery()
+
+    await fireEvent.click(screen.getByTestId('action-new-game'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('action-new-game')).toBeDisabled()
+    })
+    expect(createGame).toHaveBeenCalledTimes(1)
+
+    await fireEvent.click(screen.getByTestId('action-new-game'))
+    expect(createGame).toHaveBeenCalledTimes(1)
+
+    resolveCreate({ gameId: 'g-new', token: 'tok-new' })
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('game-over')).toBeNull()
+      expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    })
+    expect(createGame).toHaveBeenCalledTimes(1)
+  })
+
+  // Edge: mid-game «Сменить игру» must endSession → Connect, not create-and-enter.
+  test('App_switchGame_midGame_returnsToConnectWithoutCreate', async () => {
+    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+    await screen.findByTestId('switch-game')
+
+    await fireEvent.click(screen.getByTestId('switch-game'))
+
+    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(createGame).not.toHaveBeenCalled()
+    expect(loadCredentials()).toBeNull()
+  })
 })
 
 describe('App invite link (#30)', () => {
