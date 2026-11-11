@@ -58,7 +58,11 @@ type nickResponse struct {
 	Nick string `json:"nick"`
 }
 
-func (h *Handler) handleCreate(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.UserFromRequest(r); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	gameID, token, err := h.mgr.CreateGame()
 	if err != nil {
 		http.Error(w, "create failed", http.StatusInternalServerError)
@@ -68,6 +72,10 @@ func (h *Handler) handleCreate(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.UserFromRequest(r); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	gameID := r.PathValue("id")
 	token, err := h.mgr.JoinByID(gameID)
 	if err != nil {

@@ -42,7 +42,7 @@ internal/game/             — оркестратор сессий (Manager с �
 internal/protocol/         — типы WS-сообщений (зеркалятся фронтом)
 internal/transport/ws/     — WS handshake + read-loop, auth, проверка Origin
 internal/auth/             — пользователи и сессии (MemoryStore / PostgresStore, argon2id)
-internal/transport/rest/   — REST invite-флоу (POST /api/games, /api/games/{id}/join) и auth (POST /api/register, /api/login, /api/logout, GET /api/me)
+internal/transport/rest/   — REST invite-флоу (POST /api/games, /api/games/{id}/join — требуют session cookie) и auth (POST /api/register, /api/login, /api/logout, GET /api/me)
 internal/transport/static/ — раздача SPA с Cache-Control (no-cache для index.html, immutable для ассетов)
 web/                       — SPA на Svelte 5 / TS / Vite (см. FRONTEND_SPEC.md)
 ```
@@ -118,7 +118,7 @@ npm run check && npm run lint   # типы + линт
 
 ## Поток партии
 
-Игрок A создаёт игру (`POST /api/games`) → получает `gameId`, личный `token` и ссылку-приглашение `?game=<id>`. Игрок B открывает ссылку, входит (`POST /api/games/{id}/join`), оба подключаются по WS и делают `JOIN`. Дальше — `ROLL_FOR_FIRST` → `ROLL` → `MOVE`… Подробности — [SPEC.md](SPEC.md) §5.
+Игрок A (с session cookie после register/login) создаёт игру (`POST /api/games`) → получает `gameId`, личный seat-`token` и ссылку-приглашение `?game=<id>`. Игрок B (тоже с session) открывает ссылку, входит (`POST /api/games/{id}/join`), оба подключаются по WS с seat-токеном (`Authorization: Bearer` или `JOIN.token`; session cookie на WS не нужна) и делают `JOIN`. Дальше — `ROLL_FOR_FIRST` → `ROLL` → `MOVE`… Подробности — [SPEC.md](SPEC.md) §5.
 
 ## WebSocket-протокол
 
