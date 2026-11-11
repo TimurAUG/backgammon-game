@@ -1,0 +1,25 @@
+---
+description: Svelte 5, сторы и TDD клиента в web/
+globs: web/**/*.{svelte,ts}
+alwaysApply: false
+---
+
+# Клиент
+
+Svelte 5 и runes. Запрещены `svelte/store`, `$:` и `export let`. Стор — модуль с `$state`, не `writable`. Подписка на стор — чтение поля. `$effect` только для DOM-побочек с очисткой.
+
+Стор хранит только то, что прислал сервер. Оптимистичный `MOVE` не применять. Подсветка — фильтр `legalMoves` / `reach` из последнего сообщения.
+
+В обработчике pointer/click не брать геометрию из `event.currentTarget` (Svelte 5 делегирует событие). Узел — через `bind:this`.
+
+Тест `*.test.ts` рядом с файлом, Vitest + `@testing-library/svelte`. Компонент трогать через DOM (`getByRole`, для SVG — `getByTestId`). Сначала падающий тест. Правила игры на клиенте не тестировать.
+
+```svelte
+<!-- ❌ Svelte 4 -->
+<script> export let board; </script>
+
+<!-- ✅ -->
+<script lang="ts">
+  let { board }: { board: number[] } = $props()
+</script>
+```

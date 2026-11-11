@@ -1,0 +1,19 @@
+---
+description: Инварианты backgammon-game — сервер источник правды, приоритет спек
+alwaysApply: true
+---
+
+# Инварианты
+
+Сервер — единственный источник правды. Клиент рисует `STATE` и шлёт действия. Легальность хода на клиенте не считать.
+
+Приоритет при расхождении: `SPEC.md` и скилы `nardy-rules` / `nardy-protocol` выше `FRONTEND_SPEC.md`.
+
+Перед правкой прочитать скил области в `.claude/skills/`, не полагаться на память о правилах нард:
+
+- `internal/domain` — `nardy-rules`
+- протокол и транспорт — `nardy-protocol`
+- `internal/` — `nardy-tdd`
+- `web/` — `nardy-frontend` и `nardy-svelte`
+
+Галочки в `SPEC.md` §6 и `FRONTEND_SPEC.md` §7–8 — журнал уже сделанного, не следующий тикет. Новая работа идёт от карточки или требования, тем же циклом red → green → refactor.

@@ -1,0 +1,22 @@
+---
+description: TDD и границы Go-кода в internal/
+globs: internal/**/*.go
+alwaysApply: false
+---
+
+# Go
+
+Сначала падающий тест в `*_test.go` рядом с кодом, затем минимальная реализация. В комментарии теста — пункт требования (`// TDD plan #N` или секция спеки). `require` из testify, не `assert`. Имя: `TestFunc_Scenario_Expectation`.
+
+`internal/domain` не импортирует ничего, кроме stdlib. Правила игры брать из `.claude/skills/nardy-rules/SKILL.md`, не из общих знаний о нардах. Сеть, БД и конкретный ГСЧ в доменных тестах не проверять: бросок подавать как `io.Reader`.
+
+```go
+// ❌ production-код без падающего теста
+func IsLegalBearOff(...) bool { return true }
+
+// ✅ тест назван по поведению и падает до реализации
+// TDD plan #22
+func TestIsLegalBearOff_ExactPip_RemovesChecker(t *testing.T) {
+    require.True(t, IsLegalBearOff(board, White, 3))
+}
+```

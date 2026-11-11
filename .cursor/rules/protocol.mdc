@@ -1,0 +1,13 @@
+---
+description: Синхрон WS-протокола между Go и TypeScript
+globs: internal/protocol/**/*.go,internal/transport/**/*.go,web/src/protocol/**/*.ts,web/src/transport/**/*.ts
+alwaysApply: false
+---
+
+# Протокол
+
+Перед новым `type`, полем payload или кодом ошибки прочитать `.claude/skills/nardy-protocol/SKILL.md`. Сообщение — JSON с дискриминатором `type`.
+
+Менять обе стороны в одном изменении: `internal/protocol/messages.go` и `web/src/protocol/messages.ts`. Клиент не собирает состояние из разрозненных событий: `STATE` — полный снимок.
+
+Браузерный клиент кладёт токен в `JOIN`. Заголовок `Authorization` — для не-браузерных клиентов. Нет токена ни там, ни там — `ERROR` с кодом `UNAUTHORIZED`.
