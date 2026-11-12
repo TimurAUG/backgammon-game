@@ -2,7 +2,7 @@
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
   import Notifications from './components/Notifications.svelte'
-  import { createGame } from './lib/api'
+  import { createGame, logout } from './lib/api'
   import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
@@ -99,6 +99,14 @@
     newGameError = ''
   }
 
+  // «Выйти» из Game: POST /api/logout, затем teardown. Ошибка — до endSession,
+  // чтобы Game показал alert и оставил seat/сокет.
+  async function handleLogout(): Promise<void> {
+    await logout()
+    endSession()
+    replaceGameQuery(null)
+  }
+
   // Убирает token из адресной строки; опционально ставит/чистит ?game=.
   // inviteGameId — $state, чтобы Connect после 401/новой игры не держал
   // устаревший join-invite из значения, прочитанного на init.
@@ -184,12 +192,13 @@
 </script>
 
 {#if client === null}
-  <Connect onConnect={startSession} {inviteGameId} />
+  <Connect onConnect={startSession} {inviteGameId} onLoggedOut={() => replaceGameQuery(null)} />
 {:else}
   <Game
     onAction={handleAction}
     onNewGame={handleNewGame}
     onLeave={endSession}
+    onLogout={handleLogout}
     gameId={activeCreds?.gameId ?? null}
     token={activeCreds?.token ?? null}
     {creatingNewGame}

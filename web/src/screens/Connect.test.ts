@@ -5,8 +5,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, joinGame, login, me, register } from '../lib/api'
-import { loadCredentials } from '../lib/credentials'
+import { createGame, joinGame, login, logout, me, register } from '../lib/api'
+import { loadCredentials, saveCredentials } from '../lib/credentials'
 
 import Connect from './Connect.svelte'
 
@@ -250,5 +250,118 @@ describe('Connect auth (#4)', () => {
 
     await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
     expect(screen.getByRole('heading', { name: 'Длинные нарды' })).toBeInTheDocument()
+  })
+})
+
+describe('Connect logout (card #13)', () => {
+  test('Connect_loggedIn_showsLogoutNextToNick', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+  })
+
+  test('Connect_afterCreate_logoutStillNextToNick', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+
+    expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann')
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+  })
+
+  test('Connect_logoutSuccess_showsLoginFormAndClearsSeat', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    vi.mocked(logout).mockResolvedValue(undefined)
+    const onLoggedOut = vi.fn()
+    render(Connect, { props: { onConnect: vi.fn(), onLoggedOut } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok' })
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    expect(logout).toHaveBeenCalledOnce()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Register' })).toBeInTheDocument()
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+    expect(screen.queryByTestId('invite-link')).toBeNull()
+    expect(loadCredentials()).toBeNull()
+    expect(onLoggedOut).toHaveBeenCalledOnce()
+  })
+
+  test('Connect_logoutIdempotent_missingCookie_stillShowsLoginForm', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(logout).mockResolvedValue(undefined)
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+  })
+
+  test('Connect_logoutFailure_keepsNickAndSeatShowsAlert', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    vi.mocked(logout).mockRejectedValue(new Error('network'))
+    const onLoggedOut = vi.fn()
+    render(Connect, { props: { onConnect: vi.fn(), onLoggedOut } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
+    expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann')
+    expect(screen.getByTestId('invite-link')).toBeInTheDocument()
+    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok' })
+    expect(onLoggedOut).not.toHaveBeenCalled()
+  })
+
+  test('Connect_logoutInFlight_ignoresRepeatClicks', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    let resolveLogout!: () => void
+    const pending = new Promise<void>((resolve) => {
+      resolveLogout = resolve
+    })
+    vi.mocked(logout).mockReturnValue(pending)
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+
+    await fireEvent.click(screen.getByTestId('logout'))
+    await fireEvent.click(screen.getByTestId('logout'))
+    expect(logout).toHaveBeenCalledTimes(1)
+
+    resolveLogout()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+  })
+
+  test('Connect_logout_doesNotWritePasswordOrNickToStorage', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(logout).mockResolvedValue(undefined)
+    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+
+    await fireEvent.click(screen.getByTestId('logout'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+
+    expect(loadCredentials()).toBeNull()
+    const all = JSON.stringify(localStorage)
+    expect(all).not.toContain('Ann')
+    expect(all).not.toContain('password')
   })
 })

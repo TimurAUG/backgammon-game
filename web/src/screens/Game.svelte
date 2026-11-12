@@ -15,6 +15,7 @@
     onAction: (msg: ClientMessage) => void
     onNewGame: () => void
     onLeave: () => void
+    onLogout: () => Promise<void>
     gameId?: string | null
     token?: string | null
     creatingNewGame?: boolean
@@ -25,11 +26,15 @@
     onAction,
     onNewGame,
     onLeave,
+    onLogout,
     gameId = null,
     token = null,
     creatingNewGame = false,
     newGameError = '',
   }: Props = $props()
+
+  let loggingOut = $state(false)
+  let logoutError = $state('')
 
   // Первый бросок уже состоялся, если был FIRST_ROLL, или кубики на столе,
   // или кто-то уже завершил свой первый ход. После розыгрыша победитель
@@ -103,6 +108,19 @@
   function copyReconnect(): void {
     if (reconnectLink !== null) void navigator.clipboard?.writeText(reconnectLink)
   }
+
+  async function handleLogout(): Promise<void> {
+    if (loggingOut) return
+    loggingOut = true
+    logoutError = ''
+    try {
+      await onLogout()
+    } catch {
+      logoutError = 'Не удалось выйти'
+    } finally {
+      loggingOut = false
+    }
+  }
 </script>
 
 <main class="game">
@@ -122,10 +140,15 @@
         </button>
       </div>
     {/if}
+    <button type="button" class="leave" data-testid="logout" onclick={handleLogout}>Выйти</button>
     <button type="button" class="leave" data-testid="switch-game" onclick={onLeave}>
       Сменить игру
     </button>
   </header>
+
+  {#if logoutError !== ''}
+    <p class="error" role="alert">{logoutError}</p>
+  {/if}
 
   {#if blocked}
     <div class="reconnecting" role="status" aria-live="polite" data-testid="reconnecting-banner">
@@ -237,6 +260,11 @@
   }
   .leave:hover {
     background: #e7c79b;
+  }
+  .error {
+    color: #8b1c1c;
+    font-size: 14px;
+    font-weight: 600;
   }
   .first-roll {
     background: #f4ece1;

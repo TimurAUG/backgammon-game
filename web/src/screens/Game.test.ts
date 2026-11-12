@@ -1,7 +1,7 @@
 // FRONTEND_SPEC #24a — Game.svelte: композиция Board + Dice + ActionBar +
 // GameOver, всё из gameState; действия наружу через onAction/onNewGame.
 
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -24,7 +24,12 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-const noop = { onAction: vi.fn(), onNewGame: vi.fn(), onLeave: vi.fn() }
+const noop = {
+  onAction: vi.fn(),
+  onNewGame: vi.fn(),
+  onLeave: vi.fn(),
+  onLogout: vi.fn().mockResolvedValue(undefined),
+}
 
 describe('Game composition (#24a)', () => {
   test('Game_stateBoard_rendersCheckers', () => {
@@ -61,7 +66,7 @@ describe('Game action wiring (#24a)', () => {
     const onAction = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
+    render(Game, { props: { ...noop, onAction } })
 
     await fireEvent.click(screen.getByTestId('action-roll-for-first'))
 
@@ -78,7 +83,7 @@ describe('Game action wiring (#24a)', () => {
       }),
     )
     applyServerMessage({ type: 'LEGAL_MOVES', moves: [{ from: 24, to: 18, pip: 6 }] })
-    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
+    render(Game, { props: { ...noop, onAction } })
 
     await fireEvent.click(screen.getByTestId('point-24'))
     await fireEvent.click(screen.getByTestId('point-18'))
@@ -91,7 +96,7 @@ describe('Game action wiring (#24a)', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
     applyServerMessage({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    render(Game, { props: { onAction: vi.fn(), onNewGame, onLeave: vi.fn() } })
+    render(Game, { props: { ...noop, onNewGame } })
 
     await fireEvent.click(screen.getByTestId('action-new-game'))
 
@@ -187,12 +192,77 @@ describe('Game switch-game (#27)', () => {
     const onNewGame = vi.fn()
     const onLeave = vi.fn()
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction: vi.fn(), onNewGame, onLeave } })
+    render(Game, { props: { ...noop, onNewGame, onLeave } })
 
     await fireEvent.click(screen.getByTestId('switch-game'))
 
     expect(onLeave).toHaveBeenCalledOnce()
     expect(onNewGame).not.toHaveBeenCalled()
+  })
+})
+
+describe('Game logout (card #13)', () => {
+  test('Game_toolbar_showsLogoutBesideSwitchGame', () => {
+    applyServerMessage(stateFixture())
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+    expect(screen.getByTestId('switch-game')).toBeInTheDocument()
+  })
+
+  test('Game_logoutClick_callsOnLogoutNotOnLeave', async () => {
+    const onLeave = vi.fn()
+    const onLogout = vi.fn().mockResolvedValue(undefined)
+    applyServerMessage(stateFixture())
+    render(Game, { props: { ...noop, onLeave, onLogout } })
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    expect(onLogout).toHaveBeenCalledOnce()
+    expect(onLeave).not.toHaveBeenCalled()
+  })
+
+  test('Game_switchGame_doesNotCallOnLogout', async () => {
+    const onLeave = vi.fn()
+    const onLogout = vi.fn().mockResolvedValue(undefined)
+    applyServerMessage(stateFixture())
+    render(Game, { props: { ...noop, onLeave, onLogout } })
+
+    await fireEvent.click(screen.getByTestId('switch-game'))
+
+    expect(onLeave).toHaveBeenCalledOnce()
+    expect(onLogout).not.toHaveBeenCalled()
+  })
+
+  test('Game_logoutFailure_staysOnBoardShowsAlert', async () => {
+    const onLogout = vi.fn().mockRejectedValue(new Error('network'))
+    const onLeave = vi.fn()
+    applyServerMessage(stateFixture())
+    render(Game, { props: { ...noop, onLeave, onLogout } })
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
+    expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    expect(onLeave).not.toHaveBeenCalled()
+  })
+
+  test('Game_logoutInFlight_ignoresRepeatClicks', async () => {
+    let resolveLogout!: () => void
+    const pending = new Promise<void>((resolve) => {
+      resolveLogout = resolve
+    })
+    const onLogout = vi.fn().mockReturnValue(pending)
+    applyServerMessage(stateFixture())
+    render(Game, { props: { ...noop, onLogout } })
+
+    await fireEvent.click(screen.getByTestId('logout'))
+    await fireEvent.click(screen.getByTestId('logout'))
+    expect(onLogout).toHaveBeenCalledTimes(1)
+
+    resolveLogout()
+    await waitFor(() => expect(onLogout).toHaveBeenCalledTimes(1))
   })
 })
 
@@ -203,9 +273,7 @@ describe('Game reconnect link (#30)', () => {
     applyServerMessage(stateFixture())
     render(Game, {
       props: {
-        onAction: vi.fn(),
-        onNewGame: vi.fn(),
-        onLeave: vi.fn(),
+        ...noop,
         gameId: 'g-42',
         token: 'tok-42',
       },
@@ -337,7 +405,7 @@ describe('Game chat panel (#40)', () => {
     const onAction = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
+    render(Game, { props: { ...noop, onAction } })
 
     await fireEvent.click(screen.getByTestId('chat-toggle'))
     await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: 'привет' } })
