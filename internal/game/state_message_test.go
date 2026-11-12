@@ -25,7 +25,7 @@ func TestStateMessage_IncludesBorneOffAndIsFirstMove(t *testing.T) {
 		IsFirstMove: [2]bool{false, true},
 	}
 
-	msg := game.StateMessage(s)
+	msg := game.StateMessage(s, [2]string{})
 	raw, err := json.Marshal(msg)
 	require.NoError(t, err)
 
@@ -69,7 +69,7 @@ func TestStateMessage_IncludesAllHome(t *testing.T) {
 		BorneOff: [2]uint8{4, 0},
 	}
 
-	raw, err := json.Marshal(game.StateMessage(s))
+	raw, err := json.Marshal(game.StateMessage(s, [2]string{}))
 	require.NoError(t, err)
 
 	var parsed struct {
@@ -99,7 +99,7 @@ func TestStateMessage_RemainingIsJSONNumberArray(t *testing.T) {
 		Dice:   domain.NewDice(5, 3),
 	}
 
-	raw, err := json.Marshal(game.StateMessage(s))
+	raw, err := json.Marshal(game.StateMessage(s, [2]string{}))
 	require.NoError(t, err)
 
 	require.Contains(t, string(raw), `"remaining":[5,3]`,

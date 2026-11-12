@@ -59,11 +59,12 @@ type nickResponse struct {
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := h.UserFromRequest(r); !ok {
+	nick, _, ok := h.UserFromRequest(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	gameID, token, err := h.mgr.CreateGame()
+	gameID, token, err := h.mgr.CreateGame(nick)
 	if err != nil {
 		http.Error(w, "create failed", http.StatusInternalServerError)
 		return
@@ -72,12 +73,13 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := h.UserFromRequest(r); !ok {
+	nick, _, ok := h.UserFromRequest(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	gameID := r.PathValue("id")
-	token, err := h.mgr.JoinByID(gameID)
+	token, err := h.mgr.JoinByID(gameID, nick)
 	if err != nil {
 		switch {
 		case errors.Is(err, game.ErrGameNotFound):

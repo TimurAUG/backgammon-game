@@ -101,7 +101,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := pc.Send(game.JoinedMessage(color)); err != nil {
 		return
 	}
-	if err := pc.Send(game.StateMessage(g.State)); err != nil {
+	if err := pc.Send(game.StateMessage(g.State, g.Nicks())); err != nil {
 		return
 	}
 	// Инвариант протокола: при (ре)коннекте на своём ходу клиент сразу получает

@@ -105,13 +105,16 @@ description: Референс WebSocket-протокола между клиен
   "borneOff": { "white": 0-15, "black": 0-15 },
   "status": "waitingForRoll" | "waitingForMove" | "finished",
   "isFirstMove": { "white": true, "black": true },
-  "allHome": { "white": true, "black": true }
+  "allHome": { "white": true, "black": true },
+  "nicks": { "white": "<nick or empty>", "black": "<nick or empty>" }
 }
 ```
 
 Кодировка `board[i]`: знак — цвет (`>0` белые, `<0` чёрные, `0` пусто), модуль — количество.
 
 `allHome[color]` — все шашки цвета в его доме (фаза сброса), значение доменного `AllInHome`. Позволяет клиенту показывать счётчик оставшихся к сбросу шашек только в фазе сброса, не дублируя правило «все дома» на клиенте.
+
+`nicks[color]` — ник сидящего в этом слоте (из create/join session). Пустая строка = гость. Сервер — источник правды; клиент не угадывает ник соперника. CHAT/`CHAT_HISTORY` по-прежнему шлют `sender` как цвет; видимая подпись автора = `nicks[sender]` (пусто → «Гость»).
 
 ### `LEGAL_MOVES`
 

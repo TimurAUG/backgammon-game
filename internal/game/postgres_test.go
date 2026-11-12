@@ -145,3 +145,27 @@ func TestPostgresStorage_PersistsChatHistory(t *testing.T) {
 	require.Equal(t, original.Chat(), loaded.Chat(),
 		"история чата должна восстановиться эквивалентно после round-trip")
 }
+
+// Card #16 — nick_white/nick_black round-trip through Postgres.
+func TestPostgresStorage_PersistsSeatNicks(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	mgr := game.NewManagerWithStorage(storage, nil)
+	gameID, _, err := mgr.CreateGame("Alice")
+	require.NoError(t, err)
+	_, err = mgr.JoinByID(gameID, "Bob")
+	require.NoError(t, err)
+
+	loaded, ok := storage.LoadGame(gameID)
+	require.True(t, ok)
+	require.Equal(t, [2]string{"Alice", "Bob"}, loaded.Nicks())
+
+	// Empty nicks (guest / pre-deploy rows) survive round-trip as "".
+	emptyID, _, err := mgr.CreateGame("")
+	require.NoError(t, err)
+	emptyLoaded, ok := storage.LoadGame(emptyID)
+	require.True(t, ok)
+	require.Equal(t, [2]string{"", ""}, emptyLoaded.Nicks())
+}
