@@ -89,6 +89,25 @@ func TestHandler_JoinReturnsState(t *testing.T) {
 	require.Equal(t, int8(-15), msg.Board[11], "15 чёрных на пункте 12")
 }
 
+// Card #3 AC4 / SPEC [NEW 2026-11-11 — card #5] — WS seat-token auth does not
+// require a user session cookie (dial with game token only).
+func TestHandler_Join_NoSessionCookie_Accepted(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Explicit: no Cookie header — only Bearer seat token.
+	conn := dialAndJoinWithToken(t, ctx, wsURL, "g-nosession", "t-nosession")
+	defer conn.Close(websocket.StatusInternalError, "test cleanup")
+
+	msg := readMessage(t, ctx, conn)
+	require.Equal(t, "STATE", msg.Type)
+}
+
 // TestHandler_JoinTokenFallback — браузерный путь аутентификации: нативный
 // WebSocket в браузере не умеет ставить Authorization-заголовок, поэтому
 // сервер должен принимать upgrade без заголовка и брать токен из payload
