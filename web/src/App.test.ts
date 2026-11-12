@@ -49,42 +49,37 @@ function testCreateClient(creds: Credentials): WSClient {
   )
 }
 
-async function connectVia(gameId: string, token: string): Promise<void> {
-  await fireEvent.input(screen.getByLabelText('ID игры'), { target: { value: gameId } })
-  await fireEvent.input(screen.getByLabelText('Токен'), { target: { value: token } })
-  await fireEvent.click(screen.getByRole('button', { name: 'Подключиться' }))
+/** Card #11: enter via saved credentials (auto-connect), not the removed manual form. */
+function enterWithSavedCreds(gameId = 'g-1', token = 'tok'): void {
+  saveCredentials({ gameId, token })
+  render(App, { props: { createClient: testCreateClient } })
 }
 
 describe('App routing (#24b)', () => {
   test('App_noSavedCreds_showsConnectNotGame', () => {
     render(App, { props: { createClient: testCreateClient } })
 
-    expect(screen.getByLabelText('ID игры')).toBeInTheDocument()
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
   })
 
-  test('App_afterConnect_showsGameNotConnect', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-
-    await connectVia('g-1', 'tok')
+  test('App_afterConnect_showsGameNotConnect', () => {
+    enterWithSavedCreds('g-1', 'tok')
 
     expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    expect(screen.queryByLabelText('ID игры')).toBeNull()
+    expect(screen.queryByTestId('create-game')).toBeNull()
   })
 })
 
 describe('App WSClient wiring (#24b)', () => {
-  test('App_afterConnect_opensSocket', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-
-    await connectVia('g-1', 'tok')
+  test('App_afterConnect_opensSocket', () => {
+    enterWithSavedCreds('g-1', 'tok')
 
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
   test('App_incomingState_updatesBoard', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
 
     const ws = MockWebSocket.last()
     ws.acceptOpen()
@@ -94,8 +89,7 @@ describe('App WSClient wiring (#24b)', () => {
   })
 
   test('App_gameAction_sentOverSocket', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
 
     const ws = MockWebSocket.last()
     ws.acceptOpen()
@@ -153,7 +147,7 @@ describe('App new game after game over (#22 / card #6)', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось создать игру')
     expect(screen.getByTestId('game-over')).toBeInTheDocument()
-    expect(screen.queryByLabelText('ID игры')).toBeNull()
+    expect(screen.queryByTestId('create-game')).toBeNull()
     expect(loadCredentials()).toEqual({ gameId: 'g-old', token: 'tok-old' })
     expect(location.search).toContain('game=g-old')
   })
@@ -164,7 +158,7 @@ describe('App new game after game over (#22 / card #6)', () => {
 
     await fireEvent.click(screen.getByTestId('action-new-game'))
 
-    expect(await screen.findByLabelText('ID игры')).toBeInTheDocument()
+    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
     expect(loadCredentials()).toBeNull()
     expect(location.search).not.toContain('game=')
@@ -246,7 +240,7 @@ describe('App auto-connect (#24c)', () => {
     render(App, { props: { createClient: testCreateClient } })
 
     expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    expect(screen.queryByLabelText('ID игры')).toBeNull()
+    expect(screen.queryByTestId('create-game')).toBeNull()
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
@@ -326,16 +320,15 @@ describe('App public invite vs saved creds (fix)', () => {
 })
 
 describe('App UNAUTHORIZED (#25)', () => {
-  async function connectAndOpen(): Promise<MockWebSocket> {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+  function connectAndOpen(): MockWebSocket {
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     return ws
   }
 
-  test('App_unauthorized_clearsCredentials', async () => {
-    const ws = await connectAndOpen()
+  test('App_unauthorized_clearsCredentials', () => {
+    const ws = connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
@@ -343,16 +336,16 @@ describe('App UNAUTHORIZED (#25)', () => {
   })
 
   test('App_unauthorized_returnsToConnect', async () => {
-    const ws = await connectAndOpen()
+    const ws = connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
-    expect(await screen.findByLabelText('ID игры')).toBeInTheDocument()
+    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
   })
 
-  test('App_unauthorized_closesSocketToStopReconnect', async () => {
-    const ws = await connectAndOpen()
+  test('App_unauthorized_closesSocketToStopReconnect', () => {
+    const ws = connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
@@ -362,8 +355,7 @@ describe('App UNAUTHORIZED (#25)', () => {
 
 describe('App opponent-joined notification (#34a)', () => {
   test('App_opponentJoined_showsToast', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
 
@@ -373,8 +365,7 @@ describe('App opponent-joined notification (#34a)', () => {
   })
 
   test('App_newGame_clearsNotifications', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -391,8 +382,7 @@ describe('App opponent-joined notification (#34a)', () => {
 
 describe('App turn-skipped notification', () => {
   test('App_myTurnSkipped_showsDiceAndPassNotice', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -411,8 +401,7 @@ describe('App turn-skipped notification', () => {
   })
 
   test('App_opponentTurnSkipped_showsItIsMyTurn', async () => {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -430,9 +419,8 @@ describe('App turn-skipped notification', () => {
 })
 
 describe('App chat (#40)', () => {
-  async function connectedSocket(myColor: 'white' | 'black' = 'white'): Promise<MockWebSocket> {
-    render(App, { props: { createClient: testCreateClient } })
-    await connectVia('g-1', 'tok')
+  function connectedSocket(myColor: 'white' | 'black' = 'white'): MockWebSocket {
+    enterWithSavedCreds('g-1', 'tok')
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: myColor })
@@ -441,7 +429,7 @@ describe('App chat (#40)', () => {
   }
 
   test('App_incomingChatFromOpponent_appendsAndToasts', async () => {
-    const ws = await connectedSocket('white')
+    const ws = connectedSocket('white')
 
     ws.receive({ type: 'CHAT', sender: 'black', text: 'привет соперник' })
 
@@ -450,7 +438,7 @@ describe('App chat (#40)', () => {
   })
 
   test('App_ownChatEcho_appendsButNoToast', async () => {
-    const ws = await connectedSocket('white')
+    const ws = connectedSocket('white')
 
     ws.receive({ type: 'CHAT', sender: 'white', text: 'моё эхо' })
 
@@ -460,7 +448,7 @@ describe('App chat (#40)', () => {
   })
 
   test('App_incomingChatHistory_populatesStore', async () => {
-    const ws = await connectedSocket('white')
+    const ws = connectedSocket('white')
 
     ws.receive({
       type: 'CHAT_HISTORY',
@@ -477,7 +465,7 @@ describe('App chat (#40)', () => {
   })
 
   test('App_newGame_clearsChat', async () => {
-    const ws = await connectedSocket('white')
+    const ws = connectedSocket('white')
     ws.receive({ type: 'CHAT', sender: 'black', text: 'до встречи' })
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
 
@@ -488,11 +476,10 @@ describe('App chat (#40)', () => {
 })
 
 describe('App connection state (#26e)', () => {
-  test('App_socketReconnecting_disablesActionBar', async () => {
+  test('App_socketReconnecting_disablesActionBar', () => {
     vi.useFakeTimers()
     try {
-      render(App, { props: { createClient: testCreateClient } })
-      await connectVia('g-1', 'tok')
+      enterWithSavedCreds('g-1', 'tok')
       const ws = MockWebSocket.last()
       ws.acceptOpen()
       ws.receive({ type: 'JOINED', color: 'white' })

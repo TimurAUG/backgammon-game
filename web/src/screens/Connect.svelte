@@ -7,8 +7,6 @@
     inviteGameId = null,
   }: { onConnect: (creds: Credentials) => void; inviteGameId?: string | null } = $props()
 
-  let gameId = $state('')
-  let token = $state('')
   let nick = $state('')
   let password = $state('')
   let sessionNick = $state<string | null>(null)
@@ -99,15 +97,6 @@
   function copyLink(): void {
     if (created !== null) void navigator.clipboard?.writeText(inviteLink(created.gameId))
   }
-
-  // Ручной ввод — фоллбэк для отладки (gameId/token известны заранее).
-  function handleSubmit(e: SubmitEvent): void {
-    e.preventDefault()
-    const creds = { gameId: gameId.trim(), token: token.trim() }
-    if (creds.gameId === '' || creds.token === '') return
-    saveCredentials(creds)
-    onConnect(creds)
-  }
 </script>
 
 <main class="connect">
@@ -152,21 +141,6 @@
     <button type="button" class="primary" data-testid="create-game" onclick={handleCreate}>
       Создать игру
     </button>
-
-    <section class="manual">
-      <p class="hint">или войти вручную:</p>
-      <form onsubmit={handleSubmit}>
-        <label>
-          ID игры
-          <input type="text" bind:value={gameId} autocomplete="off" />
-        </label>
-        <label>
-          Токен
-          <input type="password" bind:value={token} autocomplete="off" />
-        </label>
-        <button type="submit">Подключиться</button>
-      </form>
-    </section>
   {/if}
 
   {#if error !== ''}<p class="error" role="alert">{error}</p>{/if}
@@ -246,16 +220,6 @@
     font-weight: 600;
     cursor: pointer;
   }
-  .manual {
-    margin-top: 1.5rem;
-    border-top: 1px solid #c19a6b;
-    padding-top: 1rem;
-  }
-  .manual form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
   label {
     display: flex;
     flex-direction: column;
@@ -268,16 +232,6 @@
     border-radius: 6px;
     padding: 0.5rem;
     font-size: 14px;
-  }
-  .manual button {
-    background: #c19a6b;
-    color: #2a1e10;
-    border: none;
-    border-radius: 6px;
-    padding: 0.5rem;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
   }
   .error {
     color: #8b1c1c;
