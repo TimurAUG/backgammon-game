@@ -102,6 +102,8 @@
 
 [NEW 2026-11-11 — card #5, source card #1] **Users, sessions, and auth REST.** A player must be logged in to create or join a game. A user has only nick and password (no email, real name, or other personal data). Nicks are unique case-insensitively (length 3–20). The server stores the password only as a hash (argon2id or bcrypt); plaintext passwords never appear in responses, the database, or logs. Empty nick, out-of-range nick length, or password shorter than 8 characters → `400` and no user row. Duplicate nick on register → `409`. Login with a wrong password or unknown nick → the same `401` (no distinction). A session is a random id in a cookie: HttpOnly, Secure on https, SameSite=Lax, Max-Age 30 days; closing the tab does not clear it; a process restart must not invalidate it (sessions in Postgres). One user may hold several concurrent sessions; logout ends only the current session. Endpoints: `POST /api/register` and `POST /api/login` set the session cookie; `GET /api/me` returns only the nick with a valid cookie else `401`; `POST /api/logout` clears the current cookie/session. Without a valid session cookie, `POST /api/games` and `POST /api/games/{id}/join` return `401` and do not create a game or seat the caller. With a valid session they behave as today and still issue the per-game seat token. WebSocket continues to accept the game seat token (session cookie not required on WS). Move rules, dice, and the JOIN protocol stay unchanged.
 
+[AMENDED 2026-11-12 — card #17, source card #15] On a successful `POST /api/games` or `POST /api/games/{id}/join` with a valid session, the server records that session's nick on the seat it issues (create → white seat, join → black seat) and persists it with the game. Both seats' nicks are part of the game snapshot exposed to clients on every `STATE` as `nicks: { white, black }` (string per seat; empty string when that seat has no nick). Clients must not invent a seat nick. `CHAT` / `CHAT_HISTORY` keep `sender` as the seat color (`"white"` / `"black"`) for mine/theirs alignment; visible author labels come from `STATE.nicks` keyed by that color. Move rules, dice, board coloring, and WS seat-token auth stay unchanged.
+
 ---
 
 ## 3. Доменная модель (скетч на Go)
@@ -188,6 +190,10 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 | `CHAT` | `{ sender, text }` | Сообщение игрока — эхо обоим (sender = цвет) |
 | `CHAT_HISTORY` | `{ chat: [{sender,text}] }` | История чата — при JOIN/реконнекте |
 | `ERROR` | `{ code, message }` | Невалидное действие |
+
+[AMENDED 2026-11-12 — card #17, source card #15] `STATE` payload is `{ board, turn, dice, borneOff, status, isFirstMove, allHome, nicks }` where `nicks` is `{ white, black }` — the nick string recorded for each seat (empty string when that seat has no nick). Every `STATE` (including after JOIN/reconnect) carries both seats' nicks; the server is the source of truth.
+
+[AMENDED 2026-11-12 — card #17, source card #15] `CHAT` remains `{ sender, text }` and `CHAT_HISTORY` remains `{ chat: [{sender,text}] }` with `sender` the seat color (`"white"` / `"black"`). The protocol does not add a nick field on chat messages; clients resolve the visible author label from `STATE.nicks[sender]` (empty → guest display on the client).
 
 Правила протокола:
 - `STATE` — полный снапшот, клиент не реконструирует частично.

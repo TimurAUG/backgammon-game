@@ -104,6 +104,8 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
   - `RESIGN` — всегда, пока игра не закончена.
 - Выбор шашки кликом → подсвечиваются клетки `to` из `legalMoves` для этого `from`. Клик по подсвеченной → отправка `MOVE`.
 
+[AMENDED 2026-11-12 — card #17, source card #15] Game chrome also shows a top-right seat-nick block (same screen; no new panel or pattern): line 1 is the current player's nick and their color word («Белые» / «Чёрные» from `myColor`); line 2 is the opponent's nick. Seat nicks come from `STATE.nicks { white, black }` in the game store — the client must not invent them. A seat with an empty nick string displays as «Гость». Board, Dice, ActionBar, first-roll / «Твой бросок» banners, and BearOffCounter keep color words. Toolbar controls («Копировать», «Сменить игру», reconnect banner) stay.
+
 Drag&drop (этап 15) — перетаскивание шашек поверх клик-режима через Pointer Events; клики остаются.
 
 ### GameOver
@@ -202,6 +204,8 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 ### Этап 14 — чат партии
 
 Сворачиваемая панель чата на экране Game. Сервер — источник правды: рисуем только то, что пришло в `CHAT`/`CHAT_HISTORY`, без оптимистичного эха своего сообщения. Отправитель — цвет (`sender`); сопоставляем с `myColor` → «своё/чужое».
+
+[AMENDED 2026-11-12 — card #17, source card #15] The **visible** chat author label is the seat nick from `STATE.nicks` for that message's `sender` color (empty nick → «Гость»), including after `CHAT_HISTORY` on reconnect — not the color words «Белые» / «Чёрные». Wire `sender` stays `"white"` / `"black"` and still drives mine/theirs layout (`mine` when `sender === myColor`). Chat does not carry a separate nick field; labels resolve from the store's `nicks` snapshot. Board / dice / first-roll banners remain color words.
 
 35. `protocol/messages.ts`: `ClientMessage += {type:'CHAT', text}`; `ServerMessage += {type:'CHAT', sender, text}` и `{type:'CHAT_HISTORY', chat}`. Сериализация CHAT и парсинг CHAT/CHAT_HISTORY.
 36. `stores/chat.svelte.ts`: `$state` `{messages, unread, open}`; `applyChat` (push; `++unread`, если панель закрыта), `applyChatHistory` (replace), `setChatOpen` (`open=true` обнуляет `unread`), `resetChat`.
