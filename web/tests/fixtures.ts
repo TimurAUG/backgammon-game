@@ -17,6 +17,7 @@ export function stateFixture(overrides: Partial<Omit<StateMessage, 'type'>> = {}
     borneOff: { white: 0, black: 0 },
     isFirstMove: { white: true, black: true },
     allHome: { white: false, black: false },
+    nicks: { white: '', black: '' },
     ...overrides,
   }
 }

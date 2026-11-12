@@ -69,6 +69,8 @@ describe('WSClient onMessage (#4)', () => {
       status: 'waitingForRoll',
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false },
+      nicks: { white: '', black: '' },
     })
 
     expect(received).toHaveLength(1)

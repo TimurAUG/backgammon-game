@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ClientMessage, Color } from '../protocol/messages'
   import { chat, setChatOpen } from '../stores/chat.svelte'
+  import { gameState } from '../stores/game.svelte'
 
   interface Props {
     myColor: Color | null
@@ -28,8 +29,10 @@
     }
   })
 
-  function colorLabel(c: Color): string {
-    return c === 'white' ? 'Белые' : 'Чёрные'
+  // Author label = seat nick from STATE; empty → «Гость». mine/theirs still by color.
+  function authorLabel(sender: Color): string {
+    const nick = gameState.nicks[sender]
+    return nick !== '' ? nick : 'Гость'
   }
 
   // Шлём только непустой текст; сервер всё равно тримит и валидирует, но
@@ -75,7 +78,7 @@
     <ul class="messages" bind:this={messagesEl}>
       {#each chat.messages as m, i (i)}
         <li class="msg" class:mine={m.sender === myColor} data-testid="chat-message">
-          <span class="who">{colorLabel(m.sender)}</span>
+          <span class="who">{authorLabel(m.sender)}</span>
           <span class="text">{m.text}</span>
         </li>
       {/each}

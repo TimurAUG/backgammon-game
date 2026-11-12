@@ -28,6 +28,7 @@ describe('applyServerMessage STATE (#7)', () => {
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: false, black: true },
       allHome: { white: false, black: false },
+      nicks: { white: '', black: '' },
       dice: { a: 6, b: 6, isDouble: true, remaining: [6, 6, 6, 6] },
     })
 
@@ -48,6 +49,7 @@ describe('applyServerMessage STATE (#7)', () => {
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
       allHome: { white: false, black: false },
+      nicks: { white: '', black: '' },
     })
 
     expect(gameState.dice).toBeNull()
@@ -67,9 +69,27 @@ describe('applyServerMessage STATE (#7)', () => {
       borneOff: { white: 4, black: 0 },
       isFirstMove: { white: false, black: false },
       allHome: { white: true, black: false },
+      nicks: { white: '', black: '' },
     })
 
     expect(gameState.allHome).toEqual({ white: true, black: false })
+  })
+
+  test('gameStore_onSTATE_updatesNicks', () => {
+    // Card #16 — seat nicks from STATE; reset clears them.
+    applyServerMessage({
+      type: 'STATE',
+      board: Array(24).fill(0),
+      turn: 'white',
+      status: 'waitingForRoll',
+      borneOff: { white: 0, black: 0 },
+      isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false },
+      nicks: { white: 'Alice', black: 'Bob' },
+    })
+    expect(gameState.nicks).toEqual({ white: 'Alice', black: 'Bob' })
+    resetGameState()
+    expect(gameState.nicks).toEqual({ white: '', black: '' })
   })
 })
 
@@ -152,6 +172,7 @@ describe('applyServerMessage GAME_OVER (#9)', () => {
       borneOff: { white: 12, black: 0 },
       isFirstMove: { white: false, black: false },
       allHome: { white: true, black: false },
+      nicks: { white: '', black: '' },
     })
     applyServerMessage({
       type: 'LEGAL_MOVES',
@@ -197,6 +218,7 @@ describe('applyServerMessage ERROR (#10)', () => {
       borneOff: { white: 1, black: 2 },
       isFirstMove: { white: false, black: true },
       allHome: { white: false, black: false },
+      nicks: { white: '', black: '' },
       dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
     })
     applyServerMessage({
@@ -228,6 +250,7 @@ describe('applyServerMessage started flag (#34b)', () => {
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
       allHome: { white: false, black: false } as const,
+      nicks: { white: '', black: '' },
     }
   }
 
