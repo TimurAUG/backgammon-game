@@ -64,6 +64,8 @@ web/
       sound.ts           — playRollCue() короткий сигнал через Web Audio
 
 [AMENDED 2026-11-11 — card #5, source card #1] `Connect.svelte` also hosts nick + password fields and «Log in» / «Register» actions on the same page (no new screen). `api.ts` covers register/login/me/logout and sends the session cookie (`credentials: 'include'`) on create/join; per-game seat token persistence in `credentials.ts` (`nardy.credentials`) stays as it is after a successful create/join.
+
+[AMENDED 2026-11-12 — card #12, source card #9] `Connect.svelte` offers create-game and invite join only (plus nick/password from #4/#5); no visible manual `gameId`/`token` fallback. Seat-token `localStorage` after successful create/join and personal return `?game=&token=` stay.
   tests/                 — общие тестовые утилиты, mock WebSocket, фикстуры STATE
 ```
 
@@ -92,6 +94,8 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
 При наличии сохранённых `gameId`+`token` в `localStorage` — пропускает форму и сразу подключается (см. § 5, реконнект).
 
 [AMENDED 2026-11-11 — card #5, source card #1] On the **same** Connect page (current type and colors; no new screen, pattern, or mockup), the player also sees nick and password fields plus «Log in» and «Register» buttons. Register → `POST /api/register`; Log in → `POST /api/login`. Both rely on the browser storing the session cookie (HttpOnly); closing the tab must not clear that cookie. Create-game and join-game requests include the session cookie (`credentials: 'include'`). No email, real name, or other personal-data fields. Duplicate register surfaces as 409; failed login as the shared 401 — without inventing new layout patterns. Existing invite / manual gameId+token / seat-token localStorage behaviour remains.
+
+[AMENDED 2026-11-12 — card #12, source card #9] Connect no longer shows a visible manual `gameId`/`token` form («или войти вручную», «ID игры», «Токен», «Подключиться»). Entry is create-game and invite join (`?game=`) only, plus nick/password Log in / Register from cards #4/#5. After successful create or join, seat-token persistence in `localStorage` (`nardy.credentials`) and personal return via `?game=&token=` remain; saved credentials still auto-connect when appropriate (§ 5).
 
 ### Game
 
