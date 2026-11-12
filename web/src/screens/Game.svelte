@@ -125,6 +125,16 @@
 
 <main class="game">
   <header class="toolbar">
+    {#if gameState.myColor !== null}
+      {@const ownNick = gameState.nicks[gameState.myColor] || 'Гость'}
+      {@const oppColor = gameState.myColor === 'white' ? 'black' : 'white'}
+      {@const oppNick = gameState.nicks[oppColor] || 'Гость'}
+      {@const colorWord = gameState.myColor === 'white' ? 'Белые' : 'Чёрные'}
+      <div class="seat-nicks" data-testid="seat-nicks">
+        <div data-testid="seat-nicks-own">{ownNick} · {colorWord}</div>
+        <div data-testid="seat-nicks-opponent">{oppNick}</div>
+      </div>
+    {/if}
     {#if reconnectLink !== null}
       <div class="reconnect">
         <span class="reconnect-label">Ссылка для возврата:</span>
@@ -141,16 +151,6 @@
       </div>
     {/if}
     <div class="toolbar-right">
-      {#if gameState.myColor !== null}
-        {@const ownNick = gameState.nicks[gameState.myColor] || 'Гость'}
-        {@const oppColor = gameState.myColor === 'white' ? 'black' : 'white'}
-        {@const oppNick = gameState.nicks[oppColor] || 'Гость'}
-        {@const colorWord = gameState.myColor === 'white' ? 'Белые' : 'Чёрные'}
-        <div class="seat-nicks" data-testid="seat-nicks">
-          <div data-testid="seat-nicks-own">{ownNick} · {colorWord}</div>
-          <div data-testid="seat-nicks-opponent">{oppNick}</div>
-        </div>
-      {/if}
       <button type="button" class="leave" data-testid="logout" onclick={handleLogout}>Выйти</button>
       <button type="button" class="leave" data-testid="switch-game" onclick={onLeave}>
         Сменить игру
@@ -225,24 +225,26 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
   .toolbar-right {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     flex-shrink: 0;
+    margin-left: auto;
   }
   .seat-nicks {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 0.1rem;
     font-size: 13px;
     font-weight: 600;
     color: #2a1e10;
     line-height: 1.25;
-    text-align: right;
+    text-align: left;
+    flex-shrink: 0;
   }
   .reconnect {
     display: flex;

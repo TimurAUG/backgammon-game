@@ -112,7 +112,9 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
   - `RESIGN` — всегда, пока игра не закончена.
 - Выбор шашки кликом → подсвечиваются клетки `to` из `legalMoves` для этого `from`. Клик по подсвеченной → отправка `MOVE`.
 
-[AMENDED 2026-11-12 — card #17, source card #15] Game chrome also shows a top-right seat-nick block (same screen; no new panel or pattern): line 1 is the current player's nick and their color word («Белые» / «Чёрные» from `myColor`); line 2 is the opponent's nick. Seat nicks come from `STATE.nicks { white, black }` in the game store — the client must not invent them. A seat with an empty nick string displays as «Гость». Board, Dice, ActionBar, first-roll / «Твой бросок» banners, and BearOffCounter keep color words. Toolbar controls («Копировать», «Сменить игру», reconnect banner) stay.
+[AMENDED 2026-11-12 — card #17, source card #15] Game chrome also shows a seat-nick block (same screen; no new panel or pattern): line 1 is the current player's nick and their color word («Белые» / «Чёрные» from `myColor`); line 2 is the opponent's nick. Seat nicks come from `STATE.nicks { white, black }` in the game store — the client must not invent them. A seat with an empty nick string displays as «Гость». Board, Dice, ActionBar, first-roll / «Твой бросок» banners, and BearOffCounter keep color words. Toolbar controls («Копировать», «Сменить игру», reconnect banner) stay.
+
+[AMENDED 2026-11-12 — card #16 Verify] The seat-nick block is in the **top-left** of the Game toolbar (first chrome on the left), not top-right. Own line remains `{nick} · {Белые|Чёрные}`; opponent line remains nick or «Гость». Reconnect / «Копировать» follow the nick block; «Выйти» / «Сменить игру» stay on the right.
 
 Drag&drop (этап 15) — перетаскивание шашек поверх клик-режима через Pointer Events; клики остаются.
 
