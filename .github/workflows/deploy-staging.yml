@@ -4,6 +4,10 @@ on:
   push:
     branches: [develop]
 
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
 jobs:
   ci:
     name: ci
@@ -46,9 +50,6 @@ jobs:
     environment:
       name: staging
       url: https://nardy-staging.fly.dev
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
