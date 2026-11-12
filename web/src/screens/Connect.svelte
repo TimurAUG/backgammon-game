@@ -1,11 +1,16 @@
 <script lang="ts">
-  import { createGame, joinGame, login, me, register } from '../lib/api'
-  import { saveCredentials, type Credentials } from '../lib/credentials'
+  import { createGame, joinGame, login, logout, me, register } from '../lib/api'
+  import { clearCredentials, saveCredentials, type Credentials } from '../lib/credentials'
 
   let {
     onConnect,
     inviteGameId = null,
-  }: { onConnect: (creds: Credentials) => void; inviteGameId?: string | null } = $props()
+    onLoggedOut,
+  }: {
+    onConnect: (creds: Credentials) => void
+    inviteGameId?: string | null
+    onLoggedOut?: () => void
+  } = $props()
 
   let nick = $state('')
   let password = $state('')
@@ -13,6 +18,7 @@
   let created = $state<Credentials | null>(null)
   let error = $state('')
   let sessionChecked = $state(false)
+  let loggingOut = $state(false)
 
   $effect(() => {
     let cancelled = false
@@ -97,6 +103,23 @@
   function copyLink(): void {
     if (created !== null) void navigator.clipboard?.writeText(inviteLink(created.gameId))
   }
+  async function handleLogout(): Promise<void> {
+    if (loggingOut) return
+    loggingOut = true
+    error = ''
+    try {
+      await logout()
+      clearCredentials()
+      sessionNick = null
+      created = null
+      password = ''
+      onLoggedOut?.()
+    } catch {
+      error = 'Не удалось выйти'
+    } finally {
+      loggingOut = false
+    }
+  }
 </script>
 
 <main class="connect">
@@ -104,7 +127,10 @@
 
   {#if sessionChecked}
     {#if sessionNick !== null}
-      <p class="session" data-testid="session-nick">{sessionNick}</p>
+      <div class="session-row">
+        <p class="session" data-testid="session-nick">{sessionNick}</p>
+        <button type="button" data-testid="logout" onclick={handleLogout}>Выйти</button>
+      </div>
     {:else}
       <section class="auth">
         <label>
@@ -160,10 +186,26 @@
     font-size: 14px;
     color: #5a3a1e;
   }
+  .session-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
   .session {
     font-size: 14px;
     font-weight: 600;
-    margin-bottom: 0.75rem;
+    margin: 0;
+  }
+  .session-row button {
+    border: 2px solid #2a1e10;
+    background: #f4ece1;
+    border-radius: 6px;
+    padding: 0.25rem 0.75rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2a1e10;
+    cursor: pointer;
   }
   .auth {
     display: flex;

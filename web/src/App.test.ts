@@ -7,7 +7,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, me } from './lib/api'
+import { createGame, logout, me } from './lib/api'
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
@@ -40,6 +40,8 @@ beforeEach(() => {
   vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok-new' })
   vi.mocked(me).mockReset()
   vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
+  vi.mocked(logout).mockReset()
+  vi.mocked(logout).mockResolvedValue(undefined)
 })
 
 function testCreateClient(creds: Credentials): WSClient {
@@ -211,6 +213,74 @@ describe('App new game after game over (#22 / card #6)', () => {
     expect(await screen.findByTestId('create-game')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
     expect(createGame).not.toHaveBeenCalled()
+    expect(logout).not.toHaveBeenCalled()
+    expect(loadCredentials()).toBeNull()
+  })
+})
+
+describe('App logout (card #13)', () => {
+  test('App_gameLogoutSuccess_returnsToLoginFormClosesSocket', async () => {
+    // beforeEach: me → 401. Auto-connect via seat creds; after logout Connect
+    // remounts and me stays 401 → nick/password Log in / Register.
+    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
+    window.history.replaceState(null, '', '/?game=g-1')
+    render(App, { props: { createClient: testCreateClient } })
+
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+    await screen.findByTestId('logout')
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    })
+    expect(logout).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Register' })).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(screen.queryByTestId('invite-link')).toBeNull()
+    expect(screen.queryByTestId('join-invite')).toBeNull()
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+    expect(loadCredentials()).toBeNull()
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED)
+    expect(location.search).not.toContain('game=')
+  })
+
+  test('App_gameLogoutFailure_staysOnBoardKeepsSeat', async () => {
+    vi.mocked(logout).mockRejectedValue(new Error('network'))
+    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    const ws = MockWebSocket.last()
+    ws.acceptOpen()
+    ws.receive({ type: 'JOINED', color: 'white' })
+    ws.receive(stateFixture())
+    await screen.findByTestId('logout')
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
+    expect(screen.getByTestId('point-1')).toBeInTheDocument()
+    expect(loadCredentials()).toEqual({ gameId: 'g-1', token: 'tok-1' })
+    expect(ws.readyState).not.toBe(MockWebSocket.CLOSED)
+  })
+
+  test('App_connectLogoutSuccess_clearsInviteQueryShowsLogin', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok-new' })
+    window.history.replaceState(null, '', '/')
+    render(App, { props: { createClient: testCreateClient } })
+    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(logout).toHaveBeenCalledOnce()
+    expect(screen.queryByTestId('invite-link')).toBeNull()
     expect(loadCredentials()).toBeNull()
   })
 })
