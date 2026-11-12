@@ -1,6 +1,6 @@
-// FRONTEND_SPEC #23 — Connect.svelte: форма gameId+token, сохранение
-// в localStorage, колбек onConnect с введёнными кредами.
-// Card #4 — nick/password Log in / Register + me-on-mount.
+// FRONTEND_SPEC #23 / card #11 — Connect.svelte: create + invite only
+// (manual gameId+token form removed). Card #4 — nick/password Log in /
+// Register + me-on-mount.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -25,48 +25,15 @@ beforeEach(() => {
   vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
 })
 
-async function fillAndSubmit(gameId: string, token: string): Promise<void> {
-  await fireEvent.input(screen.getByLabelText('ID игры'), { target: { value: gameId } })
-  await fireEvent.input(screen.getByLabelText('Токен'), { target: { value: token } })
-  await fireEvent.click(screen.getByRole('button', { name: 'Подключиться' }))
-}
-
-describe('Connect form (#23)', () => {
-  test('Connect_renders_formFields', async () => {
-    render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
-    expect(screen.getByLabelText('ID игры')).toBeInTheDocument()
-    expect(screen.getByLabelText('Токен')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Подключиться' })).toBeInTheDocument()
-  })
-
-  test('Connect_submitWithFilledFields_callsOnConnect', async () => {
-    const onConnect = vi.fn()
-    render(Connect, { props: { onConnect } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
-
-    await fillAndSubmit('g-42', 'tok-abc')
-
-    expect(onConnect).toHaveBeenCalledExactlyOnceWith({ gameId: 'g-42', token: 'tok-abc' })
-  })
-
-  test('Connect_submitWithFilledFields_persistsToLocalStorage', async () => {
+describe('Connect default (#11 / #23)', () => {
+  test('Connect_default_showsCreateGameWithoutManualEntry', async () => {
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
-    await fillAndSubmit('g-42', 'tok-abc')
-
-    expect(loadCredentials()).toEqual({ gameId: 'g-42', token: 'tok-abc' })
-  })
-
-  test('Connect_submitWithEmptyGameId_doesNotCallOnConnect', async () => {
-    const onConnect = vi.fn()
-    render(Connect, { props: { onConnect } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
-
-    await fillAndSubmit('   ', 'tok-abc')
-
-    expect(onConnect).not.toHaveBeenCalled()
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.queryByText('или войти вручную')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Подключиться' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Токен')).not.toBeInTheDocument()
   })
 })
 
@@ -117,6 +84,16 @@ describe('Connect invite (#29)', () => {
     await vi.waitFor(() =>
       expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-inv', token: 'tok2' }),
     )
+  })
+
+  test('Connect_inviteGameId_doesNotShowManualEntry', async () => {
+    render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
+    expect(screen.queryByText('или войти вручную')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Подключиться' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Токен')).not.toBeInTheDocument()
   })
 })
 
