@@ -108,7 +108,7 @@ Drag&drop (этап 15) — перетаскивание шашек поверх
 
 ### GameOver
 
-Overlay поверх Game при `status == "finished"`. Показывает `winner` (мой/соперник) и `kind` (Оин/Марс/Кокс). Кнопка «Новая игра» — сбрасывает `gameId` и возвращает в Connect.
+Overlay поверх Game при `status == "finished"`. Показывает `winner` (мой/соперник) и `kind` (Оин/Марс/Кокс). Кнопка «Новая игра» — `POST /api/games`, сразу входит в новую сессию (новые `gameId`+token в creds и `?game=` в URL); законченная партия остаётся позади. При ошибке создания оверлей остаётся с сообщением; при 401 — в Connect без stale `?game=`. Mid-game «Сменить игру» по-прежнему только `endSession` → Connect (не create-and-enter).
 
 ## 5. Транспорт и резильентность
 
@@ -179,7 +179,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 ### Этап 7 — конец игры
 
 21. `GameOver.svelte` показывается при `gameOver != null` с winner+kind.
-22. «Новая игра» очищает `gameId` и возвращает в Connect.
+22. «Новая игра» создаёт новую игру (`POST /api/games`) и сразу входит в неё; URL/`gameId` — новой партии. (Amended by card #6 — was return-to-Connect only.)
 
 ### Этап 8 — Connect и реконнект
 

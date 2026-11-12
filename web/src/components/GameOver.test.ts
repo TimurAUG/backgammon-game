@@ -77,4 +77,28 @@ describe('GameOver new-game (#22)', () => {
     await fireEvent.click(screen.getByTestId('action-new-game'))
     expect(onNewGame).toHaveBeenCalledOnce()
   })
+
+  test('GameOver_creating_disablesNewGameButton', () => {
+    render(GameOver, {
+      props: {
+        gameOver: { winner: 'white', kind: 'oin' },
+        onNewGame: vi.fn(),
+        creating: true,
+      },
+    })
+
+    expect(screen.getByTestId('action-new-game')).toBeDisabled()
+  })
+
+  test('GameOver_error_showsAlert', () => {
+    render(GameOver, {
+      props: {
+        gameOver: { winner: 'white', kind: 'oin' },
+        onNewGame: vi.fn(),
+        error: 'Не удалось создать игру',
+      },
+    })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось создать игру')
+  })
 })

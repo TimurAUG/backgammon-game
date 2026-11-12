@@ -24,7 +24,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-const noop = { onAction: vi.fn(), onNewGame: vi.fn() }
+const noop = { onAction: vi.fn(), onNewGame: vi.fn(), onLeave: vi.fn() }
 
 describe('Game composition (#24a)', () => {
   test('Game_stateBoard_rendersCheckers', () => {
@@ -61,7 +61,7 @@ describe('Game action wiring (#24a)', () => {
     const onAction = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction, onNewGame: vi.fn() } })
+    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
 
     await fireEvent.click(screen.getByTestId('action-roll-for-first'))
 
@@ -78,7 +78,7 @@ describe('Game action wiring (#24a)', () => {
       }),
     )
     applyServerMessage({ type: 'LEGAL_MOVES', moves: [{ from: 24, to: 18, pip: 6 }] })
-    render(Game, { props: { onAction, onNewGame: vi.fn() } })
+    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
 
     await fireEvent.click(screen.getByTestId('point-24'))
     await fireEvent.click(screen.getByTestId('point-18'))
@@ -91,7 +91,7 @@ describe('Game action wiring (#24a)', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
     applyServerMessage({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    render(Game, { props: { onAction: vi.fn(), onNewGame } })
+    render(Game, { props: { onAction: vi.fn(), onNewGame, onLeave: vi.fn() } })
 
     await fireEvent.click(screen.getByTestId('action-new-game'))
 
@@ -183,14 +183,16 @@ describe('Game waiting for opponent first roll (#51)', () => {
 })
 
 describe('Game switch-game (#27)', () => {
-  test('Game_switchGameButton_callsOnNewGame', async () => {
+  test('Game_switchGame_callsOnLeaveNotOnNewGame', async () => {
     const onNewGame = vi.fn()
+    const onLeave = vi.fn()
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction: vi.fn(), onNewGame } })
+    render(Game, { props: { onAction: vi.fn(), onNewGame, onLeave } })
 
     await fireEvent.click(screen.getByTestId('switch-game'))
 
-    expect(onNewGame).toHaveBeenCalledOnce()
+    expect(onLeave).toHaveBeenCalledOnce()
+    expect(onNewGame).not.toHaveBeenCalled()
   })
 })
 
@@ -200,7 +202,13 @@ describe('Game reconnect link (#30)', () => {
   test('Game_rendersReconnectLinkWithGameIdAndToken', () => {
     applyServerMessage(stateFixture())
     render(Game, {
-      props: { onAction: vi.fn(), onNewGame: vi.fn(), gameId: 'g-42', token: 'tok-42' },
+      props: {
+        onAction: vi.fn(),
+        onNewGame: vi.fn(),
+        onLeave: vi.fn(),
+        gameId: 'g-42',
+        token: 'tok-42',
+      },
     })
 
     const link = screen.getByTestId('reconnect-link') as HTMLInputElement
@@ -329,7 +337,7 @@ describe('Game chat panel (#40)', () => {
     const onAction = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
-    render(Game, { props: { onAction, onNewGame: vi.fn() } })
+    render(Game, { props: { onAction, onNewGame: vi.fn(), onLeave: vi.fn() } })
 
     await fireEvent.click(screen.getByTestId('chat-toggle'))
     await fireEvent.input(screen.getByTestId('chat-input'), { target: { value: 'привет' } })
