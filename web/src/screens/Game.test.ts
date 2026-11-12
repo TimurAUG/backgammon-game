@@ -273,10 +273,39 @@ describe('Game seat nicks (card #16)', () => {
     render(Game, { props: noop })
 
     const block = screen.getByTestId('seat-nicks')
-    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent('Alice · Белые')
-    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Bob')
+    // Exact text: own line is nick + color word (Verify: color for current user).
+    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent(/^Alice · Белые$/)
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Bob$/)
     expect(block).toBeInTheDocument()
     expect(screen.getByTestId('switch-game')).toBeInTheDocument()
+  })
+
+  // Verify 78991: seat-nicks is the leftmost toolbar chrome (before reconnect /
+  // copy); logout + switch-game stay on the right.
+  test('Game_seatNicks_isFirstInToolbar_beforeReconnect', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    render(Game, {
+      props: {
+        ...noop,
+        gameId: 'g-42',
+        token: 'tok-42',
+      },
+    })
+
+    const toolbar = screen.getByTestId('seat-nicks').closest('header.toolbar')
+    expect(toolbar).not.toBeNull()
+    const kids = Array.from(toolbar!.children)
+    expect(kids[0]).toBe(screen.getByTestId('seat-nicks'))
+    expect(kids[1]?.classList.contains('reconnect')).toBe(true)
+    expect(screen.getByTestId('reconnect-link')).toBeInTheDocument()
+    expect(screen.getByTestId('copy-reconnect')).toBeInTheDocument()
+    const right = kids[kids.length - 1]
+    expect(right).toBeDefined()
+    expect(right!.classList.contains('toolbar-right')).toBe(true)
+    expect(right!.contains(screen.getByTestId('logout'))).toBe(true)
+    expect(right!.contains(screen.getByTestId('switch-game'))).toBe(true)
+    expect(right!.contains(screen.getByTestId('seat-nicks'))).toBe(false)
   })
 
   test('Game_seatNicks_emptyOpponent_showsGuest', () => {
@@ -284,7 +313,7 @@ describe('Game seat nicks (card #16)', () => {
     applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: '' } }))
     render(Game, { props: noop })
 
-    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Гость')
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Гость$/)
     expect(screen.getByTestId('seat-nicks-opponent')).not.toHaveTextContent('Чёрные')
   })
 
@@ -293,8 +322,8 @@ describe('Game seat nicks (card #16)', () => {
     applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
     render(Game, { props: noop })
 
-    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent('Bob · Чёрные')
-    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Alice')
+    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent(/^Bob · Чёрные$/)
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Alice$/)
   })
 
   test('Game_firstRollBanner_stillUsesColorWords', () => {
