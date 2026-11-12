@@ -24,6 +24,8 @@ export interface GameStoreState {
   // Все шашки цвета в доме (фаза сброса) — приходит из STATE (домен AllInHome).
   // Клиент показывает счётчик оставшихся к сбросу только когда allHome[c].
   allHome: { white: boolean; black: boolean }
+  // Seat nicks from STATE; "" = guest. Never invent opponent nick locally.
+  nicks: { white: string; black: string }
   dice: Dice | null
   legalMoves: Move[]
   // Достижимые цели для подсветки прогресса хода (составные ходы одной шашкой).
@@ -46,6 +48,7 @@ function initialGameState(): GameStoreState {
     borneOff: { white: 0, black: 0 },
     isFirstMove: { white: true, black: true },
     allHome: { white: false, black: false },
+    nicks: { white: '', black: '' },
     dice: null,
     legalMoves: [],
     reach: [],
@@ -74,6 +77,7 @@ export function applyServerMessage(msg: ServerMessage): void {
       gameState.borneOff = msg.borneOff
       gameState.isFirstMove = msg.isFirstMove
       gameState.allHome = msg.allHome
+      gameState.nicks = msg.nicks
       gameState.dice = msg.dice ?? null
       gameState.started = true
       break

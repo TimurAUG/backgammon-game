@@ -266,6 +266,50 @@ describe('Game logout (card #13)', () => {
   })
 })
 
+describe('Game seat nicks (card #16)', () => {
+  test('Game_seatNicks_showsOwnNickColorAndOpponent', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    render(Game, { props: noop })
+
+    const block = screen.getByTestId('seat-nicks')
+    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent('Alice · Белые')
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Bob')
+    expect(block).toBeInTheDocument()
+    expect(screen.getByTestId('switch-game')).toBeInTheDocument()
+  })
+
+  test('Game_seatNicks_emptyOpponent_showsGuest', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: '' } }))
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Гость')
+    expect(screen.getByTestId('seat-nicks-opponent')).not.toHaveTextContent('Чёрные')
+  })
+
+  test('Game_seatNicks_blackPerspective_swapsOwnAndOpponent', () => {
+    applyServerMessage({ type: 'JOINED', color: 'black' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent('Bob · Чёрные')
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent('Alice')
+  })
+
+  test('Game_firstRollBanner_stillUsesColorWords', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+    render(Game, { props: noop })
+
+    const banner = screen.getByTestId('first-roll-banner')
+    expect(banner).toHaveTextContent('Белые')
+    expect(banner).toHaveTextContent('Чёрные')
+    expect(banner).not.toHaveTextContent('Alice')
+  })
+})
+
 describe('Game reconnect link (#30)', () => {
   // Личная ссылка для возврата в игру (в т.ч. с другого устройства):
   // содержит и gameId, и token.

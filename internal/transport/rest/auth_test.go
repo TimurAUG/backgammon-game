@@ -544,3 +544,26 @@ func TestJoin_WithSession_FullGame_Returns409(t *testing.T) {
 	defer r2.Body.Close()
 	require.Equal(t, http.StatusConflict, r2.StatusCode)
 }
+
+// Card #16 — create/join record the session nick on the seat.
+func TestCreateJoin_WithSession_RecordsSeatNicks(t *testing.T) {
+	srv, storage, _ := newGateServer(t)
+	creator := registerCookie(t, srv, "AliceNick")
+	createResp := postJSON(t, srv.URL+"/api/games", `{}`, []*http.Cookie{creator})
+	created := decodeCreds(t, createResp)
+	createResp.Body.Close()
+	require.Equal(t, http.StatusOK, createResp.StatusCode)
+
+	g, ok := storage.LoadGame(created.GameID)
+	require.True(t, ok)
+	require.Equal(t, [2]string{"AliceNick", ""}, g.Nicks())
+
+	joiner := registerCookie(t, srv, "BobNick")
+	joinResp := postJSON(t, srv.URL+"/api/games/"+created.GameID+"/join", `{}`, []*http.Cookie{joiner})
+	defer joinResp.Body.Close()
+	require.Equal(t, http.StatusOK, joinResp.StatusCode)
+
+	g2, ok := storage.LoadGame(created.GameID)
+	require.True(t, ok)
+	require.Equal(t, [2]string{"AliceNick", "BobNick"}, g2.Nicks())
+}

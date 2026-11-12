@@ -83,6 +83,13 @@ type AllHomePayload struct {
 	Black bool `json:"black"`
 }
 
+// NicksPayload — ники сидящих в STATE. Пустая строка = гость (нет ника).
+// Сервер — источник правды; клиент не угадывает ник соперника.
+type NicksPayload struct {
+	White string `json:"white"`
+	Black string `json:"black"`
+}
+
 // FirstRollPayload — индивидуальные броски обоих цветов при определении
 // первого хода (кто больше — ходит первым). Шлётся в FIRST_ROLL, чтобы
 // клиент показал «кто сколько бросил».
@@ -106,6 +113,7 @@ type ServerMessage struct {
 	BorneOff    *BorneOffPayload    `json:"borneOff,omitempty"`
 	IsFirstMove *IsFirstMovePayload `json:"isFirstMove,omitempty"`
 	AllHome     *AllHomePayload     `json:"allHome,omitempty"`
+	Nicks       *NicksPayload       `json:"nicks,omitempty"` // STATE: seat nicks ("" = guest)
 	FirstRoll   *FirstRollPayload   `json:"firstRoll,omitempty"`
 	Moves       []MovePayload       `json:"moves,omitempty"`
 	Reach       []ReachPayload      `json:"reach,omitempty"`

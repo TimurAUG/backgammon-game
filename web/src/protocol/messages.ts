@@ -74,6 +74,8 @@ export type ServerMessage =
       // allHome[c] — все шашки цвета в его доме (фаза сброса). Значение
       // доменного AllInHome на сервере: клиент не дублирует правило «все дома».
       allHome: { white: boolean; black: boolean }
+      // nicks[c] — ник сидящего; "" = гость. Сервер — источник правды.
+      nicks: { white: string; black: string }
       dice?: Dice
     }
   | { type: 'LEGAL_MOVES'; moves: Move[]; reach?: ReachMove[] }

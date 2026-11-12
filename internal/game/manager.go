@@ -58,6 +58,7 @@ type Game struct {
 	mu             sync.Mutex
 	conns          [2]Conn
 	tokens         [2]string
+	nicks          [2]string // seat nick from create/join session; "" = guest
 	rng            io.Reader
 	rolledForFirst [2]bool
 	chat           []ChatMessage
@@ -83,6 +84,13 @@ func (g *Game) Tokens() [2]string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.tokens
+}
+
+// Nicks возвращает копию ников сидящих. Пустая строка = гость.
+func (g *Game) Nicks() [2]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.nicks
 }
 
 // RolledForFirst возвращает копию счётчиков «бросал ли для определения
@@ -401,7 +409,7 @@ func (g *Game) broadcastFirstRollLocked(white, black uint8) {
 // broadcastStateLocked рассылает текущее состояние всем подключённым
 // соединениям. Вызывается с захваченным mu.
 func (g *Game) broadcastStateLocked() {
-	msg := StateMessage(g.State)
+	msg := StateMessage(g.State, g.nicks)
 	for _, conn := range g.conns {
 		if conn != nil {
 			_ = conn.Send(msg)
@@ -497,7 +505,8 @@ func JoinedMessage(c domain.Color) protocol.ServerMessage {
 }
 
 // StateMessage конвертирует доменное состояние в STATE-сообщение протокола.
-func StateMessage(s domain.GameState) protocol.ServerMessage {
+// nicks — ники сидящих (индекс по domain.Color); пустая строка = гость.
+func StateMessage(s domain.GameState, nicks [2]string) protocol.ServerMessage {
 	board := make([]int8, len(s.Board))
 	for i, v := range s.Board {
 		board[i] = v
@@ -518,6 +527,10 @@ func StateMessage(s domain.GameState) protocol.ServerMessage {
 		AllHome: &protocol.AllHomePayload{
 			White: domain.AllInHome(s.Board, domain.White),
 			Black: domain.AllInHome(s.Board, domain.Black),
+		},
+		Nicks: &protocol.NicksPayload{
+			White: nicks[domain.White],
+			Black: nicks[domain.Black],
 		},
 	}
 	if len(s.Dice.Remaining) > 0 || s.Dice.A != 0 || s.Dice.B != 0 {
@@ -632,10 +645,10 @@ func NewManagerWithStorage(storage Storage, rng io.Reader) *Manager {
 }
 
 // CreateGame генерит новую игру: случайные gameID (8 байт) и creator-token
-// (16 байт) через ids, начальную доску, creator-токен в слоте White (Black
-// свободен — туда войдёт второй игрок через JoinByID). Сохраняет и возвращает
-// gameID и token для передачи клиенту.
-func (m *Manager) CreateGame() (string, string, error) {
+// (16 байт) через ids, начальную доску, creator-токен и nick в слоте White
+// (Black свободен — туда войдёт второй игрок через JoinByID). Сохраняет и
+// возвращает gameID и token для передачи клиенту.
+func (m *Manager) CreateGame(nick string) (string, string, error) {
 	gameID, err := generateID(m.ids, 8)
 	if err != nil {
 		return "", "", err
@@ -656,6 +669,7 @@ func (m *Manager) CreateGame() (string, string, error) {
 	g.rng = m.rng
 	g.storage = m.storage
 	g.tokens[domain.White] = token
+	g.nicks[domain.White] = nick
 	if err := m.storage.SaveGame(g); err != nil {
 		return "", "", err
 	}
@@ -663,17 +677,24 @@ func (m *Manager) CreateGame() (string, string, error) {
 }
 
 // JoinByID резервирует свободный слот в существующей игре под нового игрока:
-// генерит token (16 байт), кладёт в первый пустой слот tokens, сохраняет.
-// Возвращает token для клиента. ErrGameNotFound если игры нет, ErrRoomFull
-// если оба слота заняты. WS-JOIN с этим token подключит игрока к слоту
-// (attachLocked сопоставляет по совпадению токена).
-func (m *Manager) JoinByID(gameID string) (string, error) {
-	g, ok := m.storage.LoadGame(gameID)
-	if !ok {
-		return "", ErrGameNotFound
+// генерит token (16 байт), кладёт в первый пустой слот tokens и записывает
+// nick, сохраняет. Предпочитает live-объект из active (если создатель уже
+// на WS), чтобы Postgres LoadGame не оставил in-memory партию без ника
+// второго. При подключённом сопернике шлёт свежий STATE с обновлёнными
+// nicks. ErrGameNotFound / ErrRoomFull как раньше.
+func (m *Manager) JoinByID(gameID, nick string) (string, error) {
+	m.mu.Lock()
+	g, inActive := m.active[gameID]
+	m.mu.Unlock()
+	if !inActive {
+		var ok bool
+		g, ok = m.storage.LoadGame(gameID)
+		if !ok {
+			return "", ErrGameNotFound
+		}
+		g.rng = m.rng
+		g.storage = m.storage
 	}
-	g.rng = m.rng
-	g.storage = m.storage
 
 	token, err := generateID(m.ids, 16)
 	if err != nil {
@@ -685,9 +706,13 @@ func (m *Manager) JoinByID(gameID string) (string, error) {
 	for c := 0; c < 2; c++ {
 		if g.tokens[c] == "" {
 			g.tokens[c] = token
+			g.nicks[c] = nick
 			reserved = true
 			break
 		}
+	}
+	if reserved && (g.conns[domain.White] != nil || g.conns[domain.Black] != nil) {
+		g.broadcastStateLocked()
 	}
 	g.mu.Unlock()
 

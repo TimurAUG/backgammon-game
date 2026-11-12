@@ -12,11 +12,14 @@ import { flushSync } from 'svelte'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { applyChat, chat, resetChat, setChatOpen } from '../stores/chat.svelte'
+import { applyServerMessage, resetGameState } from '../stores/game.svelte'
+import { stateFixture } from '../../tests/fixtures'
 
 import Chat from './Chat.svelte'
 
 beforeEach(() => {
   resetChat()
+  resetGameState()
 })
 
 afterEach(() => {
@@ -46,6 +49,65 @@ describe('Chat messages (#37)', () => {
     const theirs = screen.getByText('чужое').closest('[data-testid="chat-message"]')
     expect(mine).toHaveClass('mine')
     expect(theirs).not.toHaveClass('mine')
+  })
+})
+
+describe('Chat author labels (card #16)', () => {
+  test('Chat_authorLabel_usesSeatNickNotColorWord', () => {
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    setChatOpen(true)
+    applyChat({ sender: 'white', text: 'привет' })
+    applyChat({ sender: 'black', text: 'ответ' })
+
+    render(Chat, { props: { myColor: 'white', onAction: vi.fn() } })
+
+    const mine = screen.getByText('привет').closest('[data-testid="chat-message"]')
+    const theirs = screen.getByText('ответ').closest('[data-testid="chat-message"]')
+    expect(mine?.querySelector('.who')).toHaveTextContent('Alice')
+    expect(theirs?.querySelector('.who')).toHaveTextContent('Bob')
+    expect(mine?.querySelector('.who')).not.toHaveTextContent('Белые')
+    expect(theirs?.querySelector('.who')).not.toHaveTextContent('Чёрные')
+    expect(mine).toHaveClass('mine')
+    expect(theirs).not.toHaveClass('mine')
+  })
+
+  test('Chat_authorLabel_emptyNick_showsGuest', () => {
+    applyServerMessage(stateFixture({ nicks: { white: '', black: '' } }))
+    setChatOpen(true)
+    applyChat({ sender: 'white', text: 'гостевое' })
+
+    render(Chat, { props: { myColor: 'black', onAction: vi.fn() } })
+
+    const msg = screen.getByText('гостевое').closest('[data-testid="chat-message"]')
+    expect(msg?.querySelector('.who')).toHaveTextContent('Гость')
+    expect(msg?.querySelector('.who')).not.toHaveTextContent('Белые')
+  })
+
+  test('Chat_historyReplace_stillUsesNickLabels', () => {
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    setChatOpen(true)
+    applyChat({ sender: 'white', text: 'live' })
+    // CHAT_HISTORY replaces the tape (reconnect) — labels still from nicks.
+    applyServerMessage({
+      type: 'CHAT_HISTORY',
+      chat: [
+        { sender: 'white', text: 'из истории' },
+        { sender: 'black', text: 'тоже' },
+      ],
+    })
+    // applyChat is for live; history goes through chat store via applyServerMessage path in App —
+    // here we simulate the store effect: reset + applyChat entries matching history.
+    resetChat()
+    setChatOpen(true)
+    applyChat({ sender: 'white', text: 'из истории' })
+    applyChat({ sender: 'black', text: 'тоже' })
+
+    render(Chat, { props: { myColor: 'white', onAction: vi.fn() } })
+
+    expect(screen.getByText('из истории').closest('[data-testid="chat-message"]')?.querySelector('.who')).toHaveTextContent(
+      'Alice',
+    )
+    expect(screen.getByText('тоже').closest('[data-testid="chat-message"]')?.querySelector('.who')).toHaveTextContent('Bob')
   })
 })
 

@@ -41,6 +41,7 @@ describe('parseServerMessage', () => {
       borneOff: { white: 0, black: 0 },
       isFirstMove: { white: true, black: true },
       allHome: { white: false, black: false },
+      nicks: { white: '', black: '' },
       dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
     })
 
@@ -53,7 +54,26 @@ describe('parseServerMessage', () => {
     expect(msg.borneOff).toEqual({ white: 0, black: 0 })
     expect(msg.isFirstMove).toEqual({ white: true, black: true })
     expect(msg.allHome).toEqual({ white: false, black: false })
+    expect(msg.nicks).toEqual({ white: '', black: '' })
     expect(msg.dice).toEqual({ a: 3, b: 5, isDouble: false, remaining: [3, 5] })
+  })
+
+  test('parseServerMessage_STATE_includesNicks', () => {
+    // Card #16 / SPEC #17 — every STATE carries seat nicks.
+    const raw = JSON.stringify({
+      type: 'STATE',
+      board: Array(24).fill(0),
+      turn: 'white',
+      status: 'waitingForRoll',
+      borneOff: { white: 0, black: 0 },
+      isFirstMove: { white: true, black: true },
+      allHome: { white: false, black: false },
+      nicks: { white: 'Alice', black: 'Bob' },
+    })
+    const msg = parseServerMessage(raw)
+    expect(msg.type).toBe('STATE')
+    if (msg.type !== 'STATE') return
+    expect(msg.nicks).toEqual({ white: 'Alice', black: 'Bob' })
   })
 
   test('parseServerMessage_LEGAL_MOVES_parsesMoveArray', () => {
