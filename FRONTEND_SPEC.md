@@ -68,6 +68,8 @@ web/
 [AMENDED 2026-11-12 — card #12, source card #9] `Connect.svelte` offers create-game and invite join only (plus nick/password from #4/#5); no visible manual `gameId`/`token` fallback. Seat-token `localStorage` after successful create/join and personal return `?game=&token=` stay.
 
 [AMENDED 2026-11-12 — card #14, source card #10] Logged-in Connect shows a visible «Выйти» control next to the nick (before and after create). The Game toolbar includes «Выйти» alongside reconnect copy and «Сменить игру». `api.ts` `logout()` is the client call those controls use (`POST /api/logout` with `credentials: 'include'`).
+
+[AMENDED 2026-11-13 — card #20, source card #18] Connect is three states on the same screen (Figma Вход / Вошли / Игра создана): login form only until `GET /api/me` succeeds; then logged-in lobby with «Создать игру» and «Выйти из аккаунта»; after create — invite link / «Копировать» / «Войти в игру». `ActionBar.svelte` exposes ROLL_FOR_FIRST / ROLL / RESIGN only — no visible END_TURN («Завершить ход»). Mid-game Game chrome has no return link, no header «Копировать», no «Выйти», no «Сменить игру». Account logout is only «Выйти из аккаунта» on the logged-in lobby (Вошли), via `api.ts` `logout()` (`POST /api/logout` with `credentials: 'include'`).
   tests/                 — общие тестовые утилиты, mock WebSocket, фикстуры STATE
 ```
 
@@ -101,6 +103,8 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
 
 [AMENDED 2026-11-12 — card #14, source card #10] When `GET /api/me` returns a nick, Connect shows that nick with a «Выйти» control next to it — both before create («Создать игру» visible) and after create (invite link / «Войти в игру» still showing the same nick). «Выйти» is not a new screen: current type and colors. On success it calls `POST /api/logout` with the session cookie, clears `nardy.credentials`, closes any open socket, and returns to the nick/password Log in / Register form (not the invite surface). A failed or non-OK logout keeps the nick and seat token and surfaces the existing Connect `.error` alert. Other browser sessions of the same nick stay valid.
 
+[AMENDED 2026-11-13 — card #20, source card #18] Connect follows Figma Нарды as three states on the same page (current type and colors; no new route). **Вход** (no session): nick, password, Log in, Register only — no «Создать игру», no join. **Вошли** (`GET /api/me` returns nick): «Вы вошли как <ник>», «Создать игру», and directly under it same-size «Выйти из аккаунта» (replaces the #14 nick-row «Выйти» label). **Игра создана** (after successful create): «Игра создана. Отправь сопернику ссылку:», invite link, «Копировать», «Войти в игру». Create and invite join require the session cookie; without a session, even `?game=` or a saved seat token must not create/join or open the board — login first. Manual gameId/token form stays absent (#12). «Выйти из аккаунта» → `POST /api/logout`, clear `nardy.credentials`, close socket, show Вход. Failed logout keeps nick/seat and Connect `.error`. Other browser sessions of the same nick stay valid.
+
 ### Game
 
 - **Board** — SVG, 24 пункта (треугольники) + bar + bear-off трей. Рендерится из `gameStore.board`.
@@ -116,6 +120,8 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
 
 [AMENDED 2026-11-12 — card #16 Verify] The seat-nick block is in the **top-left** of the Game toolbar (first chrome on the left), not top-right. Own line remains `{nick} · {Белые|Чёрные}`; opponent line remains nick or «Гость». Reconnect / «Копировать» follow the nick block; «Выйти» / «Сменить игру» stay on the right.
 
+[AMENDED 2026-11-13 — card #20, source card #18] Mid-game Game chrome: seat-nick block (top-left, #16/#17) and reconnect status stay; no personal return link («Ссылка для возврата»), no header «Копировать», no «Выйти», no «Сменить игру». ActionBar shows «Бросить за первый ход» (`ROLL_FOR_FIRST`) and «Бросить кубики» (`ROLL`) as today, and «Сдаться» (`RESIGN`); it does not show «Завершить ход» (`END_TURN`) and does not replace it — automatic pass when there is no legal move stays. Chat and nicks stay. The only ways off the board mid-game are resign (loss by Кокс) or finishing by the existing win rules.
+
 Drag&drop (этап 15) — перетаскивание шашек поверх клик-режима через Pointer Events; клики остаются.
 
 ### GameOver
@@ -123,6 +129,8 @@ Drag&drop (этап 15) — перетаскивание шашек поверх
 Overlay поверх Game при `status == "finished"`. Показывает `winner` (мой/соперник) и `kind` (Оин/Марс/Кокс). Кнопка «Новая игра» — `POST /api/games`, сразу входит в новую сессию (новые `gameId`+token в creds и `?game=` в URL); законченная партия остаётся позади. При ошибке создания оверлей остаётся с сообщением; при 401 — в Connect без stale `?game=`. Mid-game «Сменить игру» по-прежнему только `endSession` → Connect (не create-and-enter).
 
 [AMENDED 2026-11-12 — card #14, source card #10] Game chrome (toolbar): alongside the return link / reconnect copy, «Копировать», and «Сменить игру», the header includes «Выйти». «Сменить игру» remains a game switch only (`endSession` → Connect) and must not call logout or clear the account session. «Выйти» uses the same logout path as Connect: `POST /api/logout` with credentials, clear `nardy.credentials`, close the socket, show the nick/password Log in / Register form.
+
+[AMENDED 2026-11-13 — card #20, source card #18] GameOver's only action is «Выйти» (not «Новая игра»). It ends the seat session (`endSession` / clear `nardy.credentials`, close socket) and returns to Вошли — still logged in as the same nick. It must not `POST /api/games`, must not create-and-enter, and must not account-logout. Outcome copy (won/lost, color, Оин/Марс/Кокс) is unchanged. Supersedes #6 Option B / TDD #22 create-and-enter. Mid-game «Сменить игру» and Game-toolbar «Выйти» are removed (see Game chrome amendment above).
 
 ## 5. Транспорт и резильентность
 
@@ -134,6 +142,8 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 [NEW 2026-11-11 — card #5, source card #1] User session resilience: the login session cookie is independent of the per-game seat token in `localStorage`. Tab close does not end the user session; after reopening the app, `GET /api/me` with the cookie still returns the nick until expiry or logout. Create/join REST calls must send that cookie; WS still authenticates with the game seat token only.
 
 [AMENDED 2026-11-12 — card #14, source card #10] The client exposes logout on every logged-in surface (Connect nick row and Game toolbar). Successful «Выйти» ends only this browser's user session (`POST /api/logout` with the cookie), clears the per-game seat credentials (`nardy.credentials`), closes the socket, and shows the nick/password Log in / Register form. Tab close is still not logout: the cookie survives until «Выйти» or expiry. Sibling sessions of the same nick in other browsers stay logged in. Logout with a missing or invalid cookie is idempotent (API 200) and still leaves the client on the login form; network / non-OK responses do not clear nick or seat token until logout succeeds.
+
+[AMENDED 2026-11-13 — card #20, source card #18] Auth gate: App must not auto-start a seat session from saved `nardy.credentials` or `?game=&token=` unless `GET /api/me` shows a logged-in nick; otherwise show Вход. Refresh during a live game with both the session cookie and the seat token may still reconnect. Account logout is only «Выйти из аккаунта» on Вошли (not on the Game toolbar). GameOver «Выйти» clears the seat only so the next open is Вошли, not the finished game, and does not call `POST /api/logout`. Tab close still does not end the account session; sibling sessions of the same nick stay valid. Failed account logout keeps nick/seat until logout succeeds.
 
 ## 6. SVG-доска
 
@@ -189,6 +199,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 
 17. `ActionBar`: ROLL_FOR_FIRST показывается и шлёт сообщение.
 18. `ActionBar`: ROLL/END_TURN/RESIGN — то же по своим условиям.
+[AMENDED 2026-11-13 — card #20, source card #18] 18. `ActionBar`: ROLL/RESIGN — same by their conditions; END_TURN («Завершить ход») is not shown and is not replaced by another control.
 19. `Board`: клик по своей шашке выделяет её, рендерит подсветку `to` из legalMoves.
 20. `Board`: клик по подсвеченной клетке шлёт `MOVE { from, to }`.
 
@@ -196,6 +207,7 @@ Overlay поверх Game при `status == "finished"`. Показывает `w
 
 21. `GameOver.svelte` показывается при `gameOver != null` с winner+kind.
 22. «Новая игра» создаёт новую игру (`POST /api/games`) и сразу входит в неё; URL/`gameId` — новой партии. (Amended by card #6 — was return-to-Connect only.)
+[AMENDED 2026-11-13 — card #20, source card #18] 22. GameOver «Выйти» ends the seat session and returns to the logged-in lobby (Вошли); it does not `POST /api/games` or create-and-enter. (Supersedes card #6 create-and-enter.)
 
 ### Этап 8 — Connect и реконнект
 
