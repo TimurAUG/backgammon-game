@@ -59,8 +59,24 @@ func (s *PostgresStorage) InitSchema(ctx context.Context) error {
 	`); err != nil {
 		return err
 	}
-	_, err := s.pool.Exec(ctx, `
+	if _, err := s.pool.Exec(ctx, `
 		ALTER TABLE games ADD COLUMN IF NOT EXISTS nick_black TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return err
+	}
+	// Card #22 — seat user ids + finished-stats guard.
+	if _, err := s.pool.Exec(ctx, `
+		ALTER TABLE games ADD COLUMN IF NOT EXISTS user_white TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, `
+		ALTER TABLE games ADD COLUMN IF NOT EXISTS user_black TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		ALTER TABLE games ADD COLUMN IF NOT EXISTS stats_recorded BOOLEAN NOT NULL DEFAULT FALSE
 	`)
 	return err
 }
@@ -72,6 +88,8 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 	state := g.State
 	tokens := g.tokens
 	nicks := g.nicks
+	userIDs := g.userIDs
+	statsRecorded := g.statsRecorded
 	rfr := g.rolledForFirst
 	chat := g.chat
 	id := g.ID
@@ -90,8 +108,8 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO games (id, state, token_white, token_black,
 		                   rolled_for_first_white, rolled_for_first_black, chat,
-		                   nick_white, nick_black)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		                   nick_white, nick_black, user_white, user_black, stats_recorded)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO UPDATE SET
 			state                  = EXCLUDED.state,
 			token_white            = EXCLUDED.token_white,
@@ -100,8 +118,12 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 			rolled_for_first_black = EXCLUDED.rolled_for_first_black,
 			chat                   = EXCLUDED.chat,
 			nick_white             = EXCLUDED.nick_white,
-			nick_black             = EXCLUDED.nick_black
-	`, id, stateJSON, tokens[0], tokens[1], rfr[0], rfr[1], chatJSON, nicks[0], nicks[1])
+			nick_black             = EXCLUDED.nick_black,
+			user_white             = EXCLUDED.user_white,
+			user_black             = EXCLUDED.user_black,
+			stats_recorded         = EXCLUDED.stats_recorded
+	`, id, stateJSON, tokens[0], tokens[1], rfr[0], rfr[1], chatJSON,
+		nicks[0], nicks[1], userIDs[0], userIDs[1], statsRecorded)
 	return err
 }
 
@@ -115,13 +137,16 @@ func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 	var stateJSON, chatJSON []byte
 	var tokenW, tokenB string
 	var nickW, nickB string
+	var userW, userB string
+	var statsRecorded bool
 	var rfrW, rfrB bool
 	err := s.pool.QueryRow(ctx, `
 		SELECT state, token_white, token_black,
 		       rolled_for_first_white, rolled_for_first_black, chat,
-		       nick_white, nick_black
+		       nick_white, nick_black, user_white, user_black, stats_recorded
 		FROM games WHERE id = $1
-	`, id).Scan(&stateJSON, &tokenW, &tokenB, &rfrW, &rfrB, &chatJSON, &nickW, &nickB)
+	`, id).Scan(&stateJSON, &tokenW, &tokenB, &rfrW, &rfrB, &chatJSON,
+		&nickW, &nickB, &userW, &userB, &statsRecorded)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false
@@ -146,6 +171,8 @@ func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 		State:          state,
 		tokens:         [2]string{tokenW, tokenB},
 		nicks:          [2]string{nickW, nickB},
+		userIDs:        [2]string{userW, userB},
+		statsRecorded:  statsRecorded,
 		rolledForFirst: [2]bool{rfrW, rfrB},
 		chat:           chat,
 	}, true
