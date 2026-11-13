@@ -14,6 +14,15 @@ import (
 	"github.com/TimurAUG/backgammon-game/internal/game"
 )
 
+// meResponse is GET /api/me body (card #22 / SPEC #24).
+type meResponse struct {
+	Nick       string `json:"nick"`
+	Played     int    `json:"played"`
+	Wins       int    `json:"wins"`
+	Losses     int    `json:"losses"`
+	WinPercent int    `json:"win_percent"`
+}
+
 // Handler обслуживает REST-эндпойнты поверх game.Manager и auth.Store.
 type Handler struct {
 	mgr  *game.Manager
@@ -59,12 +68,12 @@ type nickResponse struct {
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	nick, _, ok := h.UserFromRequest(r)
+	nick, userID, ok := h.UserFromRequest(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	gameID, token, err := h.mgr.CreateGame(nick)
+	gameID, token, err := h.mgr.CreateGame(nick, userID)
 	if err != nil {
 		http.Error(w, "create failed", http.StatusInternalServerError)
 		return
@@ -73,13 +82,13 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
-	nick, _, ok := h.UserFromRequest(r)
+	nick, userID, ok := h.UserFromRequest(r)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	gameID := r.PathValue("id")
-	token, err := h.mgr.JoinByID(gameID, nick)
+	token, err := h.mgr.JoinByID(gameID, nick, userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, game.ErrGameNotFound):
@@ -134,7 +143,18 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	writeJSON(w, nickResponse{Nick: u.Nick})
+	played, wins, losses, err := h.auth.UserStats(r.Context(), u.ID)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, meResponse{
+		Nick:       u.Nick,
+		Played:     played,
+		Wins:       wins,
+		Losses:     losses,
+		WinPercent: auth.WinPercent(wins, played),
+	})
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {

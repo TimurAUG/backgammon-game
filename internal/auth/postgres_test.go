@@ -12,6 +12,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/TimurAUG/backgammon-game/internal/auth"
+	"github.com/TimurAUG/backgammon-game/internal/domain"
 )
 
 func startPostgres(t *testing.T) *pgxpool.Pool {
@@ -75,4 +76,30 @@ func TestPostgresStore_DuplicateNick_ErrNickTaken(t *testing.T) {
 	require.NoError(t, err)
 	_, err = store.CreateUser(context.Background(), "frank", "password2")
 	require.ErrorIs(t, err, auth.ErrNickTaken)
+}
+
+// Card #22 — counters persist via Postgres ApplyFinishedGame / UserStats.
+func TestPostgresStore_ApplyFinishedGame_PersistsCounters(t *testing.T) {
+	pool := startPostgres(t)
+	store := auth.NewPostgresStore(pool)
+	require.NoError(t, store.InitSchema(context.Background()))
+
+	white, err := store.CreateUser(context.Background(), "WPg", "password1")
+	require.NoError(t, err)
+	black, err := store.CreateUser(context.Background(), "BPg", "password1")
+	require.NoError(t, err)
+
+	require.NoError(t, store.ApplyFinishedGame(context.Background(), white.ID, black.ID, domain.White))
+
+	p, w, l, err := store.UserStats(context.Background(), white.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, p)
+	require.Equal(t, 1, w)
+	require.Equal(t, 0, l)
+
+	p, w, l, err = store.UserStats(context.Background(), black.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, p)
+	require.Equal(t, 0, w)
+	require.Equal(t, 1, l)
 }

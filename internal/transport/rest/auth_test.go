@@ -25,11 +25,21 @@ type nickBody struct {
 func newAuthServer(t *testing.T) (*httptest.Server, *auth.MemoryStore) {
 	t.Helper()
 	store := auth.NewMemoryStore()
+	mgr := game.NewManager()
+	mgr.SetStatsRecorder(store)
 	mux := http.NewServeMux()
-	rest.NewHandler(game.NewManager(), store).Register(mux)
+	rest.NewHandler(mgr, store).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv, store
+}
+
+type meBody struct {
+	Nick       string `json:"nick"`
+	Played     int    `json:"played"`
+	Wins       int    `json:"wins"`
+	Losses     int    `json:"losses"`
+	WinPercent int    `json:"win_percent"`
 }
 
 func postJSON(t *testing.T, url, raw string, cookies []*http.Cookie) *http.Response {
@@ -150,7 +160,7 @@ func TestLogin_WrongOrUnknown_Same401(t *testing.T) {
 	require.Equal(t, string(wb), string(ub))
 }
 
-// Card #2 AC5 — valid cookie → 200 with nick only.
+// Card #2 AC5 / Card #22 AC1 — valid cookie → 200 with nick + zero stats.
 func TestMe_ValidCookie_ReturnsNick(t *testing.T) {
 	srv, _ := newAuthServer(t)
 	reg := postJSON(t, srv.URL+"/api/register", `{"nick":"Dan","password":"password1"}`, nil)
@@ -163,17 +173,25 @@ func TestMe_ValidCookie_ReturnsNick(t *testing.T) {
 	raw, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "password")
-	var body nickBody
+	var body meBody
 	require.NoError(t, json.Unmarshal(raw, &body))
 	require.Equal(t, "Dan", body.Nick)
+	require.Equal(t, 0, body.Played)
+	require.Equal(t, 0, body.Wins)
+	require.Equal(t, 0, body.Losses)
+	require.Equal(t, 0, body.WinPercent)
 }
 
-// Card #2 AC6 — no cookie → 401.
+// Card #2 AC6 / Card #22 AC7 — no cookie → 401, not a zero-stats object.
 func TestMe_NoCookie_Returns401(t *testing.T) {
 	srv, _ := newAuthServer(t)
 	resp := getMe(t, srv, nil)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), `"played"`)
+	require.NotContains(t, string(raw), `"win_percent"`)
 }
 
 // Card #2 AC7 / edge — logout ends one session; sibling remains.

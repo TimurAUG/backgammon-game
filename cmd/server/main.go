@@ -74,7 +74,10 @@ func buildDeps(ctx context.Context) (*game.Manager, auth.Store, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Print("storage: in-memory (DATABASE_URL не задан)")
-		return game.NewManager(), auth.NewMemoryStore(), func() {}, nil
+		store := auth.NewMemoryStore()
+		mgr := game.NewManager()
+		mgr.SetStatsRecorder(store)
+		return mgr, store, func() {}, nil
 	}
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -91,5 +94,7 @@ func buildDeps(ctx context.Context) (*game.Manager, auth.Store, func(), error) {
 		return nil, nil, nil, err
 	}
 	log.Print("storage: postgres")
-	return game.NewManagerWithStorage(gameStore, crand.Reader), authStore, pool.Close, nil
+	mgr := game.NewManagerWithStorage(gameStore, crand.Reader)
+	mgr.SetStatsRecorder(authStore)
+	return mgr, authStore, pool.Close, nil
 }

@@ -153,9 +153,9 @@ func TestPostgresStorage_PersistsSeatNicks(t *testing.T) {
 	require.NoError(t, storage.InitSchema(context.Background()))
 
 	mgr := game.NewManagerWithStorage(storage, nil)
-	gameID, _, err := mgr.CreateGame("Alice")
+	gameID, _, err := mgr.CreateGame("Alice", "")
 	require.NoError(t, err)
-	_, err = mgr.JoinByID(gameID, "Bob")
+	_, err = mgr.JoinByID(gameID, "Bob", "")
 	require.NoError(t, err)
 
 	loaded, ok := storage.LoadGame(gameID)
@@ -163,9 +163,44 @@ func TestPostgresStorage_PersistsSeatNicks(t *testing.T) {
 	require.Equal(t, [2]string{"Alice", "Bob"}, loaded.Nicks())
 
 	// Empty nicks (guest / pre-deploy rows) survive round-trip as "".
-	emptyID, _, err := mgr.CreateGame("")
+	emptyID, _, err := mgr.CreateGame("", "")
 	require.NoError(t, err)
 	emptyLoaded, ok := storage.LoadGame(emptyID)
 	require.True(t, ok)
 	require.Equal(t, [2]string{"", ""}, emptyLoaded.Nicks())
+}
+
+// Card #22 — user_white/user_black/stats_recorded round-trip through Postgres.
+func TestPostgresStorage_PersistsSeatUserIDsAndStatsRecorded(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	mgr := game.NewManagerWithStorage(storage, nil)
+	mgr.SetStatsRecorder(noopStats{})
+	gameID, whiteTok, err := mgr.CreateGame("Alice", "uid-w")
+	require.NoError(t, err)
+	_, err = mgr.JoinByID(gameID, "Bob", "uid-b")
+	require.NoError(t, err)
+
+	loaded, ok := storage.LoadGame(gameID)
+	require.True(t, ok)
+	require.Equal(t, [2]string{"uid-w", "uid-b"}, loaded.UserIDs())
+	require.False(t, loaded.StatsRecorded())
+
+	_, g, err := mgr.JoinGame(gameID, whiteTok, &mockConn{})
+	require.NoError(t, err)
+	g.Resign(domain.White)
+	require.True(t, g.StatsRecorded())
+
+	reloaded, ok := storage.LoadGame(gameID)
+	require.True(t, ok)
+	require.True(t, reloaded.StatsRecorded())
+	require.Equal(t, [2]string{"uid-w", "uid-b"}, reloaded.UserIDs())
+}
+
+type noopStats struct{}
+
+func (noopStats) ApplyFinishedGame(context.Context, string, string, domain.Color) error {
+	return nil
 }

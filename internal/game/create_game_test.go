@@ -20,7 +20,7 @@ func TestManager_CreateGame_PersistsGameWithCreatorToken(t *testing.T) {
 		bytes.Repeat([]byte{0x22}, 16)...,
 	))
 
-	gameID, token, err := m.CreateGame("creator")
+	gameID, token, err := m.CreateGame("creator", "")
 
 	require.NoError(t, err)
 	require.Equal(t, "aabbccddeeff0011", gameID)

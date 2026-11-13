@@ -5,6 +5,7 @@
 package game
 
 import (
+	"context"
 	crand "crypto/rand"
 	"errors"
 	"io"
@@ -13,6 +14,12 @@ import (
 	"github.com/TimurAUG/backgammon-game/internal/domain"
 	"github.com/TimurAUG/backgammon-game/internal/protocol"
 )
+
+// StatsRecorder attributes a finished game to seated user ids (card #22).
+// Nil on Manager/Game means no-op (unit tests without auth counters).
+type StatsRecorder interface {
+	ApplyFinishedGame(ctx context.Context, whiteUserID, blackUserID string, winner domain.Color) error
+}
 
 // Conn — абстрактный «канал» к одному клиенту. Реализуется на уровне
 // транспорта (WS) и используется в game для рассылки сообщений.
@@ -59,6 +66,8 @@ type Game struct {
 	conns          [2]Conn
 	tokens         [2]string
 	nicks          [2]string // seat nick from create/join session; "" = guest
+	userIDs        [2]string // seat user id from create/join session; "" = none (card #22)
+	statsRecorded  bool      // finished-game counters already applied (card #22)
 	rng            io.Reader
 	rolledForFirst [2]bool
 	chat           []ChatMessage
@@ -66,6 +75,9 @@ type Game struct {
 	// storage — куда персистится игра. nil → in-memory only (тесты домена,
 	// memoryStorage). Установлен Manager.JoinGame после Load/Create.
 	storage Storage
+
+	// stats — optional; set from Manager when creating/loading (card #22).
+	stats StatsRecorder
 }
 
 // maybePersist сохраняет текущее состояние в Storage, если он задан.
@@ -91,6 +103,20 @@ func (g *Game) Nicks() [2]string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.nicks
+}
+
+// UserIDs возвращает копию user id сидящих. Пустая строка = нет атрибуции.
+func (g *Game) UserIDs() [2]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.userIDs
+}
+
+// StatsRecorded reports whether finished-game counters were applied.
+func (g *Game) StatsRecorded() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.statsRecorded
 }
 
 // RolledForFirst возвращает копию счётчиков «бросал ли для определения
@@ -160,6 +186,7 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 
 	if winner, kind, finished := domain.Winner(g.State.Board, g.State.BorneOff); finished {
 		g.State.Status = domain.StatusFinished
+		g.recordFinishedStatsLocked(winner)
 		g.broadcastStateLocked()
 		g.broadcastGameOverLocked(winner, kind)
 		return nil
@@ -331,8 +358,30 @@ func (g *Game) Resign(c domain.Color) {
 	}
 
 	g.State.Status = domain.StatusFinished
+	g.recordFinishedStatsLocked(winner)
 	g.broadcastStateLocked()
 	g.broadcastGameOverLocked(winner, domain.Koks)
+}
+
+// recordFinishedStatsLocked applies seat user counters once per finished game.
+// Must be called with g.mu held. Card #22.
+func (g *Game) recordFinishedStatsLocked(winner domain.Color) {
+	if g.statsRecorded {
+		return
+	}
+	whiteUID := g.userIDs[domain.White]
+	blackUID := g.userIDs[domain.Black]
+	if whiteUID == "" && blackUID == "" {
+		g.statsRecorded = true
+		return
+	}
+	if g.stats == nil {
+		return
+	}
+	if err := g.stats.ApplyFinishedGame(context.Background(), whiteUID, blackUID, winner); err != nil {
+		return
+	}
+	g.statsRecorded = true
 }
 
 // RollForFirst обрабатывает сигнал «готов» от игрока c в фазе определения
@@ -620,6 +669,7 @@ type Manager struct {
 	storage Storage
 	rng     io.Reader
 	ids     io.Reader // источник для gameID/token (crypto/rand; фикс-reader в тестах)
+	stats   StatsRecorder
 
 	mu     sync.Mutex
 	active map[string]*Game
@@ -644,11 +694,16 @@ func NewManagerWithStorage(storage Storage, rng io.Reader) *Manager {
 	return &Manager{storage: storage, rng: rng, ids: crand.Reader, active: map[string]*Game{}}
 }
 
+// SetStatsRecorder wires finished-game counter updates (card #22). Nil = no-op.
+func (m *Manager) SetStatsRecorder(stats StatsRecorder) {
+	m.stats = stats
+}
+
 // CreateGame генерит новую игру: случайные gameID (8 байт) и creator-token
-// (16 байт) через ids, начальную доску, creator-токен и nick в слоте White
-// (Black свободен — туда войдёт второй игрок через JoinByID). Сохраняет и
+// (16 байт) через ids, начальную доску, creator-токен, nick и userID в слоте
+// White (Black свободен — туда войдёт второй игрок через JoinByID). Сохраняет и
 // возвращает gameID и token для передачи клиенту.
-func (m *Manager) CreateGame(nick string) (string, string, error) {
+func (m *Manager) CreateGame(nick, userID string) (string, string, error) {
 	gameID, err := generateID(m.ids, 8)
 	if err != nil {
 		return "", "", err
@@ -668,8 +723,10 @@ func (m *Manager) CreateGame(nick string) (string, string, error) {
 	}
 	g.rng = m.rng
 	g.storage = m.storage
+	g.stats = m.stats
 	g.tokens[domain.White] = token
 	g.nicks[domain.White] = nick
+	g.userIDs[domain.White] = userID
 	if err := m.storage.SaveGame(g); err != nil {
 		return "", "", err
 	}
@@ -678,11 +735,11 @@ func (m *Manager) CreateGame(nick string) (string, string, error) {
 
 // JoinByID резервирует свободный слот в существующей игре под нового игрока:
 // генерит token (16 байт), кладёт в первый пустой слот tokens и записывает
-// nick, сохраняет. Предпочитает live-объект из active (если создатель уже
+// nick + userID, сохраняет. Предпочитает live-объект из active (если создатель уже
 // на WS), чтобы Postgres LoadGame не оставил in-memory партию без ника
 // второго. При подключённом сопернике шлёт свежий STATE с обновлёнными
 // nicks. ErrGameNotFound / ErrRoomFull как раньше.
-func (m *Manager) JoinByID(gameID, nick string) (string, error) {
+func (m *Manager) JoinByID(gameID, nick, userID string) (string, error) {
 	m.mu.Lock()
 	g, inActive := m.active[gameID]
 	m.mu.Unlock()
@@ -694,6 +751,7 @@ func (m *Manager) JoinByID(gameID, nick string) (string, error) {
 		}
 		g.rng = m.rng
 		g.storage = m.storage
+		g.stats = m.stats
 	}
 
 	token, err := generateID(m.ids, 16)
@@ -707,6 +765,7 @@ func (m *Manager) JoinByID(gameID, nick string) (string, error) {
 		if g.tokens[c] == "" {
 			g.tokens[c] = token
 			g.nicks[c] = nick
+			g.userIDs[c] = userID
 			reserved = true
 			break
 		}
@@ -763,6 +822,7 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 		}
 		g.rng = m.rng
 		g.storage = m.storage
+		g.stats = m.stats
 		m.active[id] = g
 	}
 	m.mu.Unlock()

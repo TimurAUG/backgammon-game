@@ -11,10 +11,10 @@ import (
 // сервер генерит token и кладёт в свободный слот Black. TDD plan #40.
 func TestManager_JoinByID_ReservesSecondSlot(t *testing.T) {
 	m := NewManager()
-	gameID, creatorToken, err := m.CreateGame("creator")
+	gameID, creatorToken, err := m.CreateGame("creator", "")
 	require.NoError(t, err)
 
-	token, err := m.JoinByID(gameID, "joiner")
+	token, err := m.JoinByID(gameID, "joiner", "")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
@@ -29,7 +29,7 @@ func TestManager_JoinByID_ReservesSecondSlot(t *testing.T) {
 func TestManager_JoinByID_NotFound_ReturnsErrGameNotFound(t *testing.T) {
 	m := NewManager()
 
-	_, err := m.JoinByID("no-such-game", "anyone")
+	_, err := m.JoinByID("no-such-game", "anyone", "")
 
 	require.ErrorIs(t, err, ErrGameNotFound)
 }
@@ -37,12 +37,12 @@ func TestManager_JoinByID_NotFound_ReturnsErrGameNotFound(t *testing.T) {
 // TestManager_JoinByID_Full — третий вход (оба слота заняты) → ErrRoomFull.
 func TestManager_JoinByID_Full_ReturnsErrRoomFull(t *testing.T) {
 	m := NewManager()
-	gameID, _, err := m.CreateGame("creator")
+	gameID, _, err := m.CreateGame("creator", "")
 	require.NoError(t, err)
-	_, err = m.JoinByID(gameID, "joiner") // занимает Black
+	_, err = m.JoinByID(gameID, "joiner", "") // занимает Black
 	require.NoError(t, err)
 
-	_, err = m.JoinByID(gameID, "third") // мест больше нет
+	_, err = m.JoinByID(gameID, "third", "") // мест больше нет
 
 	require.ErrorIs(t, err, ErrRoomFull)
 }
