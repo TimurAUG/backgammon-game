@@ -1,7 +1,6 @@
 // FRONTEND_SPEC #24b — App.svelte: маршрутизация Connect ↔ Game и
-// проводка WSClient (onMessage→gameStore, onAction→send, onNewGame→сброс).
-// createClient инжектируется: реальный WSClient поверх MockWebSocket.
-// Card #6 — GameOver «Новая игра» create-and-enter via createGame().
+// проводка WSClient (onMessage→gameStore, onAction→send).
+// Card #19 — auth gate before seat auto-connect; GameOver seat exit (no create-and-enter).
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
@@ -51,37 +50,85 @@ function testCreateClient(creds: Credentials): WSClient {
   )
 }
 
-/** Card #11: enter via saved credentials (auto-connect), not the removed manual form. */
-function enterWithSavedCreds(gameId = 'g-1', token = 'tok'): void {
+/** Card #19: board only after me succeeds + saved/URL seat creds. */
+function enterWithSavedCreds(gameId = 'g-1', token = 'tok', nick = 'Ann'): void {
+  vi.mocked(me).mockResolvedValue({ nick })
   saveCredentials({ gameId, token })
   render(App, { props: { createClient: testCreateClient } })
 }
 
-describe('App routing (#24b)', () => {
-  test('App_noSavedCreds_showsConnectNotGame', () => {
+async function waitForBoard(): Promise<void> {
+  await waitFor(() => expect(screen.getByTestId('point-1')).toBeInTheDocument())
+}
+
+describe('App routing (#24b / #19)', () => {
+  test('App_noSavedCreds_showsConnectNotGame', async () => {
     render(App, { props: { createClient: testCreateClient } })
 
-    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('create-game')).toBeNull()
     expect(screen.queryByTestId('point-1')).toBeNull()
   })
 
-  test('App_afterConnect_showsGameNotConnect', () => {
+  test('App_afterConnect_showsGameNotConnect', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
 
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
     expect(screen.queryByTestId('create-game')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull()
+  })
+})
+
+describe('App auth gate (#19)', () => {
+  test('App_savedSeatWithoutMe_showsVhodNotBoard', async () => {
+    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  test('App_urlTokenWithoutMe_showsVhodNotBoard', async () => {
+    window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  test('App_mePending_doesNotStartSessionFromSaved', () => {
+    let resolveMe!: (value: { nick: string }) => void
+    vi.mocked(me).mockReturnValue(
+      new Promise<{ nick: string }>((resolve) => {
+        resolveMe = resolve
+      }),
+    )
+    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    // Title-only Connect while sessionChecked is false.
+    expect(screen.getByRole('heading', { name: 'Длинные нарды' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull()
+
+    resolveMe({ nick: 'Ann' })
   })
 })
 
 describe('App WSClient wiring (#24b)', () => {
-  test('App_afterConnect_opensSocket', () => {
+  test('App_afterConnect_opensSocket', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
 
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
   test('App_incomingState_updatesBoard', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
 
     const ws = MockWebSocket.last()
     ws.acceptOpen()
@@ -92,6 +139,7 @@ describe('App WSClient wiring (#24b)', () => {
 
   test('App_gameAction_sentOverSocket', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
 
     const ws = MockWebSocket.last()
     ws.acceptOpen()
@@ -103,220 +151,109 @@ describe('App WSClient wiring (#24b)', () => {
   })
 })
 
-describe('App new game after game over (#22 / card #6)', () => {
-  // With ?game= in the URL Connect hides the manual form (join-invite).
-  // Seed matching saved creds so App auto-connects into the finished session.
+describe('App game over exit (#19)', () => {
   async function reachGameOverWithQuery(gameId = 'g-old', token = 'tok-old'): Promise<MockWebSocket> {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     saveCredentials({ gameId, token })
     window.history.replaceState(null, '', `/?game=${gameId}`)
     render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
-    ws.receive(stateFixture())
+    ws.receive(stateFixture({ nicks: { white: 'Ann', black: 'Bob' } }))
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    await screen.findByTestId('action-new-game')
+    await screen.findByTestId('action-exit')
     return ws
   }
 
-  test('App_newGame_afterGameOver_createsAndEntersFreshGame', async () => {
+  test('App_gameOverExit_endsSeatReturnsVoshliSameNick_noCreateNoLogout', async () => {
+    // After seat exit: Connect remounts; me still 200 → Вошли (create + account logout).
+    // Keep me resolving to Ann for the remounted Connect.
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     await reachGameOverWithQuery('g-old', 'tok-old')
 
-    await fireEvent.click(screen.getByTestId('action-new-game'))
+    await fireEvent.click(screen.getByTestId('action-exit'))
 
-    await waitFor(() => {
-      expect(screen.queryByTestId('game-over')).toBeNull()
-      expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    })
-    expect(createGame).toHaveBeenCalledOnce()
-    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok-new' })
-    expect(MockWebSocket.instances.length).toBeGreaterThanOrEqual(2)
-    const latest = MockWebSocket.last()
-    latest.acceptOpen()
-    expect(latest.sent).toContain(
-      JSON.stringify({ type: 'JOIN', gameId: 'g-new', token: 'tok-new' }),
-    )
-    expect(location.search).toContain('game=g-new')
-    expect(location.search).not.toContain('g-old')
-    expect(location.search).not.toContain('token')
-  })
-
-  test('App_newGame_createFails_keepsGameOverAndShowsError', async () => {
-    vi.mocked(createGame).mockRejectedValue(Object.assign(new Error('fail'), { status: 500 }))
-    await reachGameOverWithQuery()
-
-    await fireEvent.click(screen.getByTestId('action-new-game'))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось создать игру')
-    expect(screen.getByTestId('game-over')).toBeInTheDocument()
-    expect(screen.queryByTestId('create-game')).toBeNull()
-    expect(loadCredentials()).toEqual({ gameId: 'g-old', token: 'tok-old' })
-    expect(location.search).toContain('game=g-old')
-  })
-
-  test('App_newGame_createUnauthorized_returnsToConnectAndClearsGameQuery', async () => {
-    vi.mocked(createGame).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
-    await reachGameOverWithQuery()
-
-    await fireEvent.click(screen.getByTestId('action-new-game'))
-
-    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
-    expect(screen.queryByTestId('point-1')).toBeNull()
-    expect(loadCredentials()).toBeNull()
-    expect(location.search).not.toContain('game=')
-    expect(screen.queryByTestId('join-invite')).toBeNull()
-  })
-
-  // Edge: double-press while create is in flight — App must set creatingNewGame
-  // so the button disables and a second click cannot call createGame again.
-  test('App_newGame_doublePressWhileInFlight_callsCreateOnceAndDisablesButton', async () => {
-    let resolveCreate!: (value: Credentials) => void
-    const pending = new Promise<Credentials>((resolve) => {
-      resolveCreate = resolve
-    })
-    vi.mocked(createGame).mockReturnValue(pending)
-
-    await reachGameOverWithQuery()
-
-    await fireEvent.click(screen.getByTestId('action-new-game'))
-
-    await waitFor(() => {
-      expect(screen.getByTestId('action-new-game')).toBeDisabled()
-    })
-    expect(createGame).toHaveBeenCalledTimes(1)
-
-    await fireEvent.click(screen.getByTestId('action-new-game'))
-    expect(createGame).toHaveBeenCalledTimes(1)
-
-    resolveCreate({ gameId: 'g-new', token: 'tok-new' })
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('game-over')).toBeNull()
-      expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    })
-    expect(createGame).toHaveBeenCalledTimes(1)
-  })
-
-  // Edge: mid-game «Сменить игру» must endSession → Connect, not create-and-enter.
-  test('App_switchGame_midGame_returnsToConnectWithoutCreate', async () => {
-    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
-    render(App, { props: { createClient: testCreateClient } })
-
-    const ws = MockWebSocket.last()
-    ws.acceptOpen()
-    ws.receive({ type: 'JOINED', color: 'white' })
-    ws.receive(stateFixture())
-    await screen.findByTestId('switch-game')
-
-    await fireEvent.click(screen.getByTestId('switch-game'))
-
-    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
     expect(createGame).not.toHaveBeenCalled()
     expect(logout).not.toHaveBeenCalled()
     expect(loadCredentials()).toBeNull()
   })
+
+  test('App_gameOverExit_clearsGameQuery', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    await reachGameOverWithQuery('g-old', 'tok-old')
+
+    await fireEvent.click(screen.getByTestId('action-exit'))
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(location.search).not.toContain('game=')
+    expect(location.search).not.toContain('token')
+  })
 })
 
-describe('App logout (card #13)', () => {
-  test('App_gameLogoutSuccess_returnsToLoginFormClosesSocket', async () => {
-    // beforeEach: me → 401. Auto-connect via seat creds; after logout Connect
-    // remounts and me stays 401 → nick/password Log in / Register.
-    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
-    window.history.replaceState(null, '', '/?game=g-1')
-    render(App, { props: { createClient: testCreateClient } })
-
-    const ws = MockWebSocket.last()
-    ws.acceptOpen()
-    ws.receive({ type: 'JOINED', color: 'white' })
-    ws.receive(stateFixture())
-    await screen.findByTestId('logout')
-
-    await fireEvent.click(screen.getByTestId('logout'))
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
-    })
-    expect(logout).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Register' })).toBeInTheDocument()
-    expect(screen.queryByTestId('point-1')).toBeNull()
-    expect(screen.queryByTestId('invite-link')).toBeNull()
-    expect(screen.queryByTestId('join-invite')).toBeNull()
-    expect(screen.queryByTestId('session-nick')).toBeNull()
-    expect(loadCredentials()).toBeNull()
-    expect(ws.readyState).toBe(MockWebSocket.CLOSED)
-    expect(location.search).not.toContain('game=')
-  })
-
-  test('App_gameLogoutFailure_staysOnBoardKeepsSeat', async () => {
-    vi.mocked(logout).mockRejectedValue(new Error('network'))
-    saveCredentials({ gameId: 'g-1', token: 'tok-1' })
-    render(App, { props: { createClient: testCreateClient } })
-
-    const ws = MockWebSocket.last()
-    ws.acceptOpen()
-    ws.receive({ type: 'JOINED', color: 'white' })
-    ws.receive(stateFixture())
-    await screen.findByTestId('logout')
-
-    await fireEvent.click(screen.getByTestId('logout'))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    expect(loadCredentials()).toEqual({ gameId: 'g-1', token: 'tok-1' })
-    expect(ws.readyState).not.toBe(MockWebSocket.CLOSED)
-  })
-
-  test('App_connectLogoutSuccess_clearsInviteQueryShowsLogin', async () => {
+describe('App logout (card #13 / #19)', () => {
+  test('App_connectLogoutSuccess_clearsAndShowsVhod', async () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
-    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok-new' })
     window.history.replaceState(null, '', '/')
     render(App, { props: { createClient: testCreateClient } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
-    await fireEvent.click(screen.getByTestId('create-game'))
-    await screen.findByTestId('invite-link')
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('logout'))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
     expect(logout).toHaveBeenCalledOnce()
-    expect(screen.queryByTestId('invite-link')).toBeNull()
+    expect(screen.queryByTestId('session-nick')).toBeNull()
     expect(loadCredentials()).toBeNull()
   })
 })
 
-describe('App invite link (#30)', () => {
-  test('App_gameParamInUrl_showsJoinInviteInConnect', () => {
+describe('App invite link (#30 / #19)', () => {
+  test('App_gameParamInUrl_loggedOut_showsVhodNotJoinInvite', async () => {
     window.history.replaceState(null, '', '/?game=g-xyz')
 
     render(App, { props: { createClient: testCreateClient } })
 
-    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('join-invite')).toBeNull()
     expect(screen.queryByTestId('create-game')).toBeNull()
   })
 
-  test('App_noGameParam_showsCreateInConnect', () => {
+  test('App_gameParamInUrl_loggedIn_showsJoinInvite', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    window.history.replaceState(null, '', '/?game=g-xyz')
+
     render(App, { props: { createClient: testCreateClient } })
 
-    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
+    expect(screen.queryByTestId('create-game')).toBeNull()
+  })
+
+  test('App_noGameParam_loggedIn_showsCreateInConnect', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
     expect(screen.queryByTestId('join-invite')).toBeNull()
   })
 })
 
-describe('App auto-connect (#24c)', () => {
-  test('App_savedCreds_autoConnectsToGameSkippingConnect', () => {
-    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
+describe('App auto-connect (#24c / #19)', () => {
+  test('App_savedCreds_autoConnectsToGameSkippingConnect', async () => {
+    enterWithSavedCreds('g-saved', 'tok-saved')
+    await waitForBoard()
 
-    render(App, { props: { createClient: testCreateClient } })
-
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
     expect(screen.queryByTestId('create-game')).toBeNull()
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
-  test('App_savedCreds_joinsWithSavedCreds', () => {
-    saveCredentials({ gameId: 'g-saved', token: 'tok-saved' })
-    render(App, { props: { createClient: testCreateClient } })
+  test('App_savedCreds_joinsWithSavedCreds', async () => {
+    enterWithSavedCreds('g-saved', 'tok-saved')
+    await waitForBoard()
 
     MockWebSocket.last().acceptOpen()
 
@@ -326,33 +263,38 @@ describe('App auto-connect (#24c)', () => {
   })
 })
 
-describe('App reconnect link (#30)', () => {
-  test('App_gameAndTokenInUrl_autoReconnects', () => {
+describe('App reconnect link (#30 / #19)', () => {
+  test('App_gameAndTokenInUrl_autoReconnects', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
     render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
 
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
     MockWebSocket.last().acceptOpen()
     expect(MockWebSocket.last().sent).toContain(
       JSON.stringify({ type: 'JOIN', gameId: 'g-url', token: 'tok-url' }),
     )
   })
 
-  test('App_gameAndTokenInUrl_savesCredsAndStripsToken', () => {
+  test('App_gameAndTokenInUrl_savesCredsAndStripsToken', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
     render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
 
     expect(loadCredentials()).toEqual({ gameId: 'g-url', token: 'tok-url' })
     expect(location.search).not.toContain('token')
   })
 
-  test('App_urlToken_overridesSavedCreds', () => {
+  test('App_urlToken_overridesSavedCreds', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     saveCredentials({ gameId: 'g-old', token: 'tok-old' })
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
     render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
 
     MockWebSocket.last().acceptOpen()
     expect(MockWebSocket.last().sent).toContain(
@@ -361,44 +303,41 @@ describe('App reconnect link (#30)', () => {
   })
 })
 
-describe('App public invite vs saved creds (fix)', () => {
-  // Публичное приглашение ?game=<id> (без token): нельзя авто-подключаться по
-  // сохранённым кредам ДРУГОЙ игры — иначе игрок уходит не в ту игру (или в
-  // одном браузере занимает чужой слот, став дублем создателя). Должны показать
-  // join-invite, чтобы получить собственный токен.
-  test('App_publicInvite_staleCredsForOtherGame_showsJoinInviteAndDoesNotConnect', () => {
+describe('App public invite vs saved creds (fix / #19)', () => {
+  test('App_publicInvite_staleCredsForOtherGame_showsJoinInviteAndDoesNotConnect', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     saveCredentials({ gameId: 'g-other', token: 'tok-other' })
     window.history.replaceState(null, '', '/?game=g-new')
 
     render(App, { props: { createClient: testCreateClient } })
 
-    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
     expect(MockWebSocket.instances).toHaveLength(0)
   })
 
-  // Приглашение в СВОЮ сохранённую игру (saved.gameId == invite) — это возврат
-  // (F5/повторный заход по ссылке): авто-реконнект по saved сохраняется.
-  test('App_publicInvite_ownSavedGame_autoReconnects', () => {
+  test('App_publicInvite_ownSavedGame_autoReconnects', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     saveCredentials({ gameId: 'g-1', token: 'tok-1' })
     window.history.replaceState(null, '', '/?game=g-1')
 
     render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
 
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 })
 
 describe('App UNAUTHORIZED (#25)', () => {
-  function connectAndOpen(): MockWebSocket {
+  async function connectAndOpen(): Promise<MockWebSocket> {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     return ws
   }
 
-  test('App_unauthorized_clearsCredentials', () => {
-    const ws = connectAndOpen()
+  test('App_unauthorized_clearsCredentials', async () => {
+    const ws = await connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
@@ -406,16 +345,18 @@ describe('App UNAUTHORIZED (#25)', () => {
   })
 
   test('App_unauthorized_returnsToConnect', async () => {
-    const ws = connectAndOpen()
+    // Seat token invalid — endSession; account cookie still valid → Вошли.
+    const ws = await connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
-    expect(await screen.findByTestId('create-game')).toBeInTheDocument()
+    expect(await screen.findByText('Вы вошли как Ann')).toBeInTheDocument()
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
     expect(screen.queryByTestId('point-1')).toBeNull()
   })
 
-  test('App_unauthorized_closesSocketToStopReconnect', () => {
-    const ws = connectAndOpen()
+  test('App_unauthorized_closesSocketToStopReconnect', async () => {
+    const ws = await connectAndOpen()
 
     ws.receive({ type: 'ERROR', code: 'UNAUTHORIZED', message: 'нет доступа' })
 
@@ -426,6 +367,7 @@ describe('App UNAUTHORIZED (#25)', () => {
 describe('App opponent-joined notification (#34a)', () => {
   test('App_opponentJoined_showsToast', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
 
@@ -434,8 +376,10 @@ describe('App opponent-joined notification (#34a)', () => {
     expect(await screen.findByText('Соперник присоединился')).toBeInTheDocument()
   })
 
-  test('App_newGame_clearsNotifications', async () => {
+  test('App_gameOverExit_clearsNotifications', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -444,8 +388,9 @@ describe('App opponent-joined notification (#34a)', () => {
     await screen.findByText('Соперник присоединился')
 
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    await fireEvent.click(await screen.findByTestId('action-new-game'))
+    await fireEvent.click(await screen.findByTestId('action-exit'))
 
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
     expect(screen.queryByText('Соперник присоединился')).toBeNull()
   })
 })
@@ -453,6 +398,7 @@ describe('App opponent-joined notification (#34a)', () => {
 describe('App turn-skipped notification', () => {
   test('App_myTurnSkipped_showsDiceAndPassNotice', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -464,7 +410,6 @@ describe('App turn-skipped notification', () => {
       dice: { a: 1, b: 2, isDouble: false, remaining: [1, 2] },
     })
 
-    // мой ход пропущен: показаны кубики 1 и 2 + что ходить нечем
     expect(
       await screen.findByText((t) => t.includes('1') && t.includes('2') && t.includes('нечем')),
     ).toBeInTheDocument()
@@ -472,6 +417,7 @@ describe('App turn-skipped notification', () => {
 
   test('App_opponentTurnSkipped_showsItIsMyTurn', async () => {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: 'white' })
@@ -483,14 +429,14 @@ describe('App turn-skipped notification', () => {
       dice: { a: 3, b: 5, isDouble: false, remaining: [3, 5] },
     })
 
-    // ход соперника пропущен → сообщаем, что теперь ваш ход
     expect(await screen.findByText((t) => t.includes('ваш ход'))).toBeInTheDocument()
   })
 })
 
 describe('App chat (#40)', () => {
-  function connectedSocket(myColor: 'white' | 'black' = 'white'): MockWebSocket {
+  async function connectedSocket(myColor: 'white' | 'black' = 'white'): Promise<MockWebSocket> {
     enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
     const ws = MockWebSocket.last()
     ws.acceptOpen()
     ws.receive({ type: 'JOINED', color: myColor })
@@ -499,7 +445,7 @@ describe('App chat (#40)', () => {
   }
 
   test('App_incomingChatFromOpponent_appendsAndToasts', async () => {
-    const ws = connectedSocket('white')
+    const ws = await connectedSocket('white')
 
     ws.receive({ type: 'CHAT', sender: 'black', text: 'привет соперник' })
 
@@ -508,17 +454,16 @@ describe('App chat (#40)', () => {
   })
 
   test('App_ownChatEcho_appendsButNoToast', async () => {
-    const ws = connectedSocket('white')
+    const ws = await connectedSocket('white')
 
     ws.receive({ type: 'CHAT', sender: 'white', text: 'моё эхо' })
 
     expect(chat.messages).toEqual([{ sender: 'white', text: 'моё эхо' }])
-    // Своё сообщение (эхо) не тостим; панель свёрнута → текста в DOM нет.
     expect(screen.queryByText('моё эхо')).toBeNull()
   })
 
   test('App_incomingChatHistory_populatesStore', async () => {
-    const ws = connectedSocket('white')
+    const ws = await connectedSocket('white')
 
     ws.receive({
       type: 'CHAT_HISTORY',
@@ -534,22 +479,26 @@ describe('App chat (#40)', () => {
     ])
   })
 
-  test('App_newGame_clearsChat', async () => {
-    const ws = connectedSocket('white')
+  test('App_gameOverExit_clearsChat', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    const ws = await connectedSocket('white')
     ws.receive({ type: 'CHAT', sender: 'black', text: 'до встречи' })
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
 
-    await fireEvent.click(await screen.findByTestId('action-new-game'))
+    await fireEvent.click(await screen.findByTestId('action-exit'))
 
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
     expect(chat.messages).toEqual([])
   })
 })
 
 describe('App connection state (#26e)', () => {
-  test('App_socketReconnecting_disablesActionBar', () => {
+  test('App_socketReconnecting_disablesActionBar', async () => {
     vi.useFakeTimers()
     try {
       enterWithSavedCreds('g-1', 'tok')
+      // Fake timers: waitForBoard via microtasks — flush me promise.
+      await vi.waitFor(() => expect(screen.getByTestId('point-1')).toBeInTheDocument())
       const ws = MockWebSocket.last()
       ws.acceptOpen()
       ws.receive({ type: 'JOINED', color: 'white' })

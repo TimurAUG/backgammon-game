@@ -103,6 +103,7 @@
   function copyLink(): void {
     if (created !== null) void navigator.clipboard?.writeText(inviteLink(created.gameId))
   }
+
   async function handleLogout(): Promise<void> {
     if (loggingOut) return
     loggingOut = true
@@ -126,12 +127,8 @@
   <h1>Длинные нарды</h1>
 
   {#if sessionChecked}
-    {#if sessionNick !== null}
-      <div class="session-row">
-        <p class="session" data-testid="session-nick">{sessionNick}</p>
-        <button type="button" data-testid="logout" onclick={handleLogout}>Выйти</button>
-      </div>
-    {:else}
+    {#if sessionNick === null}
+      <!-- Вход: nick/password only -->
       <section class="auth">
         <label>
           Ник
@@ -146,27 +143,33 @@
           <button type="button" onclick={handleRegister}>Register</button>
         </div>
       </section>
+    {:else if created !== null}
+      <!-- Игра создана: hint + invite + copy + enter; no session line, no account logout -->
+      <p class="hint">Игра создана. Отправь сопернику ссылку:</p>
+      <div class="invite">
+        <input class="link" readonly value={inviteLink(created.gameId)} data-testid="invite-link" />
+        <button type="button" onclick={copyLink}>Копировать</button>
+      </div>
+      <button type="button" class="primary" data-testid="enter-game" onclick={enterCreatedGame}>
+        Войти в игру
+      </button>
+    {:else if inviteGameId !== null}
+      <!-- Invite join: session + join CTA; no create, no logout -->
+      <p class="session" data-testid="session-nick">Вы вошли как {sessionNick}</p>
+      <p class="hint">Тебя пригласили в игру.</p>
+      <button type="button" class="primary" data-testid="join-invite" onclick={handleJoin}>
+        Войти в игру
+      </button>
+    {:else}
+      <!-- Вошли: session + create + account logout stacked -->
+      <p class="session" data-testid="session-nick">Вы вошли как {sessionNick}</p>
+      <button type="button" class="primary" data-testid="create-game" onclick={handleCreate}>
+        Создать игру
+      </button>
+      <button type="button" class="primary account-logout" data-testid="logout" onclick={handleLogout}>
+        Выйти из аккаунта
+      </button>
     {/if}
-  {/if}
-
-  {#if created !== null}
-    <p class="hint">Игра создана. Отправь сопернику ссылку:</p>
-    <div class="invite">
-      <input class="link" readonly value={inviteLink(created.gameId)} data-testid="invite-link" />
-      <button type="button" onclick={copyLink}>Копировать</button>
-    </div>
-    <button type="button" class="primary" data-testid="enter-game" onclick={enterCreatedGame}>
-      Войти в игру
-    </button>
-  {:else if inviteGameId !== null}
-    <p class="hint">Тебя пригласили в игру.</p>
-    <button type="button" class="primary" data-testid="join-invite" onclick={handleJoin}>
-      Войти в игру
-    </button>
-  {:else}
-    <button type="button" class="primary" data-testid="create-game" onclick={handleCreate}>
-      Создать игру
-    </button>
   {/if}
 
   {#if error !== ''}<p class="error" role="alert">{error}</p>{/if}
@@ -186,26 +189,12 @@
     font-size: 14px;
     color: #5a3a1e;
   }
-  .session-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
   .session {
     font-size: 14px;
     font-weight: 600;
-    margin: 0;
-  }
-  .session-row button {
-    border: 2px solid #2a1e10;
-    background: #f4ece1;
-    border-radius: 6px;
-    padding: 0.25rem 0.75rem;
-    font-size: 13px;
-    font-weight: 600;
-    color: #2a1e10;
-    cursor: pointer;
+    margin: 0 0 0.75rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .auth {
     display: flex;
@@ -229,6 +218,7 @@
     cursor: pointer;
   }
   .primary {
+    display: block;
     width: 100%;
     background: #2a1e10;
     color: #f4ece1;
@@ -238,9 +228,13 @@
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
+    margin-bottom: 0.5rem;
   }
   .primary:hover {
     background: #5a3a1e;
+  }
+  .account-logout {
+    margin-top: 0;
   }
   .invite {
     display: flex;

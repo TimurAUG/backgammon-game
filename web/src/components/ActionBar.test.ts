@@ -72,7 +72,7 @@ describe('ActionBar visibility (#17/#18 show conditions)', () => {
     expect(screen.queryByTestId('action-resign')).not.toBeNull()
   })
 
-  test('ActionBar_waitingForMove_myTurn_showsEndTurn', () => {
+  test('ActionBar_waitingForMove_hidesEndTurn', () => {
     render(ActionBar, {
       props: defaultProps({
         rolledForFirst: true,
@@ -83,7 +83,8 @@ describe('ActionBar visibility (#17/#18 show conditions)', () => {
     })
 
     expect(screen.queryByTestId('action-roll')).toBeNull()
-    expect(screen.queryByTestId('action-end-turn')).not.toBeNull()
+    expect(screen.queryByTestId('action-end-turn')).toBeNull()
+    expect(screen.queryByTestId('action-resign')).not.toBeNull()
   })
 
   test('ActionBar_finished_hidesAllActiveButtons', () => {
@@ -128,23 +129,6 @@ describe('ActionBar click handlers (#17/#18)', () => {
     await fireEvent.click(screen.getByTestId('action-roll'))
 
     expect(onAction).toHaveBeenCalledWith({ type: 'ROLL' })
-  })
-
-  test('ActionBar_clickEndTurn_sendsEndTurn', async () => {
-    const onAction = vi.fn()
-    render(ActionBar, {
-      props: defaultProps({
-        rolledForFirst: true,
-        status: 'waitingForMove',
-        turn: 'white',
-        myColor: 'white',
-        onAction,
-      }),
-    })
-
-    await fireEvent.click(screen.getByTestId('action-end-turn'))
-
-    expect(onAction).toHaveBeenCalledWith({ type: 'END_TURN' })
   })
 
   test('ActionBar_clickResign_sendsResign', async () => {

@@ -1,7 +1,8 @@
 // FRONTEND_SPEC #24a — Game.svelte: композиция Board + Dice + ActionBar +
-// GameOver, всё из gameState; действия наружу через onAction/onNewGame.
+// GameOver, всё из gameState; действия наружу через onAction/onExit.
+// Card #19 — strip toolbar chrome; GameOver seat exit via onExit.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -26,9 +27,7 @@ beforeEach(() => {
 
 const noop = {
   onAction: vi.fn(),
-  onNewGame: vi.fn(),
-  onLeave: vi.fn(),
-  onLogout: vi.fn().mockResolvedValue(undefined),
+  onExit: vi.fn(),
 }
 
 describe('Game composition (#24a)', () => {
@@ -61,7 +60,7 @@ describe('Game composition (#24a)', () => {
   })
 })
 
-describe('Game action wiring (#24a)', () => {
+describe('Game action wiring (#24a / #19)', () => {
   test('Game_rollForFirstClick_callsOnAction', async () => {
     const onAction = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
@@ -91,16 +90,33 @@ describe('Game action wiring (#24a)', () => {
     expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'MOVE', from: 24, to: 18 })
   })
 
-  test('Game_gameOver_rendersOverlayAndForwardsNewGame', async () => {
-    const onNewGame = vi.fn()
+  test('Game_gameOver_rendersOverlayAndForwardsOnExit', async () => {
+    const onExit = vi.fn()
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
     applyServerMessage({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
-    render(Game, { props: { ...noop, onNewGame } })
+    render(Game, { props: { ...noop, onExit } })
 
-    await fireEvent.click(screen.getByTestId('action-new-game'))
+    await fireEvent.click(screen.getByTestId('action-exit'))
 
-    expect(onNewGame).toHaveBeenCalledOnce()
+    expect(onExit).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Game toolbar (#19)', () => {
+  test('Game_toolbar_hasNoReturnCopyLogoutSwitch', () => {
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    render(Game, { props: noop })
+
+    expect(screen.getByTestId('seat-nicks')).toBeInTheDocument()
+    expect(screen.queryByTestId('reconnect-link')).toBeNull()
+    expect(screen.queryByTestId('copy-reconnect')).toBeNull()
+    expect(screen.queryByTestId('logout')).toBeNull()
+    expect(screen.queryByTestId('switch-game')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Копировать' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Выйти' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Сменить игру' })).toBeNull()
   })
 })
 
@@ -116,8 +132,6 @@ describe('Game first-roll banner (#2)', () => {
   })
 
   test('Game_afterWinnerRolls_hidesBanner', () => {
-    // Победитель бросил кубики на ход (waitingForMove, кубики на столе) —
-    // плашка первого броска больше не нужна.
     applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 4, black: 6 } })
     applyServerMessage(
       stateFixture({
@@ -132,8 +146,6 @@ describe('Game first-roll banner (#2)', () => {
   })
 
   test('Game_afterFirstEndTurn_keepsBannerHidden', () => {
-    // Первый игрок (black) завершил ход → очередь white бросать
-    // (waitingForRoll), isFirstMove[black]=false. Плашка не возвращается.
     applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 4, black: 6 } })
     applyServerMessage(
       stateFixture({
@@ -156,14 +168,10 @@ describe('Game first-roll banner (#2)', () => {
 })
 
 describe('Game first-roll winner re-roll (#2)', () => {
-  // После розыгрыша победитель бросает кубики заново: бэк шлёт STATE с
-  // status=waitingForRoll и dice=null (значения розыгрыша не переносятся).
-  // Признак «розыгрыш состоялся» — firstRoll, а не наличие кубиков, поэтому
-  // победитель видит «Бросить кубики» (ROLL), а не снова «Бросить за первый ход».
   test('Game_afterRollForFirst_winnerSeesRollDice', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
-    applyServerMessage(stateFixture()) // waitingForRoll, turn=white, dice=null
+    applyServerMessage(stateFixture())
 
     render(Game, { props: noop })
 
@@ -173,8 +181,6 @@ describe('Game first-roll winner re-roll (#2)', () => {
 })
 
 describe('Game waiting for opponent first roll (#51)', () => {
-  // Пользовательский баг: нажал «Бросить за первый ход» — и ничего не видно,
-  // пока соперник не бросит. Теперь кнопка сменяется индикатором ожидания.
   test('Game_afterRollForFirstClick_showsWaitingIndicator', async () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture())
@@ -187,125 +193,27 @@ describe('Game waiting for opponent first roll (#51)', () => {
   })
 })
 
-describe('Game switch-game (#27)', () => {
-  test('Game_switchGame_callsOnLeaveNotOnNewGame', async () => {
-    const onNewGame = vi.fn()
-    const onLeave = vi.fn()
-    applyServerMessage(stateFixture())
-    render(Game, { props: { ...noop, onNewGame, onLeave } })
-
-    await fireEvent.click(screen.getByTestId('switch-game'))
-
-    expect(onLeave).toHaveBeenCalledOnce()
-    expect(onNewGame).not.toHaveBeenCalled()
-  })
-})
-
-describe('Game logout (card #13)', () => {
-  test('Game_toolbar_showsLogoutBesideSwitchGame', () => {
-    applyServerMessage(stateFixture())
-    render(Game, { props: noop })
-
-    expect(screen.getByTestId('logout')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
-    expect(screen.getByTestId('switch-game')).toBeInTheDocument()
-  })
-
-  test('Game_logoutClick_callsOnLogoutNotOnLeave', async () => {
-    const onLeave = vi.fn()
-    const onLogout = vi.fn().mockResolvedValue(undefined)
-    applyServerMessage(stateFixture())
-    render(Game, { props: { ...noop, onLeave, onLogout } })
-
-    await fireEvent.click(screen.getByTestId('logout'))
-
-    expect(onLogout).toHaveBeenCalledOnce()
-    expect(onLeave).not.toHaveBeenCalled()
-  })
-
-  test('Game_switchGame_doesNotCallOnLogout', async () => {
-    const onLeave = vi.fn()
-    const onLogout = vi.fn().mockResolvedValue(undefined)
-    applyServerMessage(stateFixture())
-    render(Game, { props: { ...noop, onLeave, onLogout } })
-
-    await fireEvent.click(screen.getByTestId('switch-game'))
-
-    expect(onLeave).toHaveBeenCalledOnce()
-    expect(onLogout).not.toHaveBeenCalled()
-  })
-
-  test('Game_logoutFailure_staysOnBoardShowsAlert', async () => {
-    const onLogout = vi.fn().mockRejectedValue(new Error('network'))
-    const onLeave = vi.fn()
-    applyServerMessage(stateFixture())
-    render(Game, { props: { ...noop, onLeave, onLogout } })
-
-    await fireEvent.click(screen.getByTestId('logout'))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
-    expect(screen.getByTestId('point-1')).toBeInTheDocument()
-    expect(onLeave).not.toHaveBeenCalled()
-  })
-
-  test('Game_logoutInFlight_ignoresRepeatClicks', async () => {
-    let resolveLogout!: () => void
-    const pending = new Promise<void>((resolve) => {
-      resolveLogout = resolve
-    })
-    const onLogout = vi.fn().mockReturnValue(pending)
-    applyServerMessage(stateFixture())
-    render(Game, { props: { ...noop, onLogout } })
-
-    await fireEvent.click(screen.getByTestId('logout'))
-    await fireEvent.click(screen.getByTestId('logout'))
-    expect(onLogout).toHaveBeenCalledTimes(1)
-
-    resolveLogout()
-    await waitFor(() => expect(onLogout).toHaveBeenCalledTimes(1))
-  })
-})
-
-describe('Game seat nicks (card #16)', () => {
+describe('Game seat nicks (card #16 / #19)', () => {
   test('Game_seatNicks_showsOwnNickColorAndOpponent', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
     render(Game, { props: noop })
 
     const block = screen.getByTestId('seat-nicks')
-    // Exact text: own line is nick + color word (Verify: color for current user).
     expect(screen.getByTestId('seat-nicks-own')).toHaveTextContent(/^Alice · Белые$/)
     expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Bob$/)
     expect(block).toBeInTheDocument()
-    expect(screen.getByTestId('switch-game')).toBeInTheDocument()
   })
 
-  // Verify 78991: seat-nicks is the leftmost toolbar chrome (before reconnect /
-  // copy); logout + switch-game stay on the right.
-  test('Game_seatNicks_isFirstInToolbar_beforeReconnect', () => {
+  test('Game_seatNicks_isFirstInHeader', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
-    render(Game, {
-      props: {
-        ...noop,
-        gameId: 'g-42',
-        token: 'tok-42',
-      },
-    })
+    render(Game, { props: noop })
 
-    const toolbar = screen.getByTestId('seat-nicks').closest('header.toolbar')
-    expect(toolbar).not.toBeNull()
-    const kids = Array.from(toolbar!.children)
+    const header = screen.getByTestId('seat-nicks').closest('header')
+    expect(header).not.toBeNull()
+    const kids = Array.from(header!.children)
     expect(kids[0]).toBe(screen.getByTestId('seat-nicks'))
-    expect(kids[1]?.classList.contains('reconnect')).toBe(true)
-    expect(screen.getByTestId('reconnect-link')).toBeInTheDocument()
-    expect(screen.getByTestId('copy-reconnect')).toBeInTheDocument()
-    const right = kids[kids.length - 1]
-    expect(right).toBeDefined()
-    expect(right!.classList.contains('toolbar-right')).toBe(true)
-    expect(right!.contains(screen.getByTestId('logout'))).toBe(true)
-    expect(right!.contains(screen.getByTestId('switch-game'))).toBe(true)
-    expect(right!.contains(screen.getByTestId('seat-nicks'))).toBe(false)
   })
 
   test('Game_seatNicks_emptyOpponent_showsGuest', () => {
@@ -336,25 +244,6 @@ describe('Game seat nicks (card #16)', () => {
     expect(banner).toHaveTextContent('Белые')
     expect(banner).toHaveTextContent('Чёрные')
     expect(banner).not.toHaveTextContent('Alice')
-  })
-})
-
-describe('Game reconnect link (#30)', () => {
-  // Личная ссылка для возврата в игру (в т.ч. с другого устройства):
-  // содержит и gameId, и token.
-  test('Game_rendersReconnectLinkWithGameIdAndToken', () => {
-    applyServerMessage(stateFixture())
-    render(Game, {
-      props: {
-        ...noop,
-        gameId: 'g-42',
-        token: 'tok-42',
-      },
-    })
-
-    const link = screen.getByTestId('reconnect-link') as HTMLInputElement
-    expect(link.value).toContain('?game=g-42')
-    expect(link.value).toContain('token=tok-42')
   })
 })
 
@@ -416,11 +305,11 @@ describe('Game your-roll cue (#34b)', () => {
 
   test('Game_becomesMyRoll_pushesYourRollToastAndPlaysSound', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
-    applyServerMessage(moveState('black')) // ход соперника — не мой бросок
+    applyServerMessage(moveState('black'))
     render(Game, { props: noop })
     expect(playRollCue).not.toHaveBeenCalled()
 
-    applyServerMessage(rollState('white')) // соперник передал ход → мой бросок
+    applyServerMessage(rollState('white'))
     flushSync()
 
     expect(notifications.items.some((n) => n.text === 'Твой бросок')).toBe(true)
@@ -429,10 +318,10 @@ describe('Game your-roll cue (#34b)', () => {
 
   test('Game_opponentRoll_doesNotNotify', () => {
     applyServerMessage({ type: 'JOINED', color: 'white' })
-    applyServerMessage(moveState('white')) // мой ход двигать
+    applyServerMessage(moveState('white'))
     render(Game, { props: noop })
 
-    applyServerMessage(rollState('black')) // я завершил → бросает соперник
+    applyServerMessage(rollState('black'))
     flushSync()
 
     expect(playRollCue).not.toHaveBeenCalled()
@@ -440,10 +329,8 @@ describe('Game your-roll cue (#34b)', () => {
   })
 
   test('Game_firstRollStage_notifiesEvenIfNotMyTurn', () => {
-    render(Game, { props: noop }) // монтируем до данных: started=false
+    render(Game, { props: noop })
     applyServerMessage({ type: 'JOINED', color: 'black' })
-    // стадия розыгрыша: оба ещё не ходили, firstRoll нет, turn=white (не мой) —
-    // бросают оба, поэтому «Твой бросок» уместен и чёрным тоже.
     applyServerMessage(stateFixture({ status: 'waitingForRoll', turn: 'white' }))
     flushSync()
 
@@ -458,7 +345,7 @@ describe('Game your-roll cue (#34b)', () => {
 
     applyServerMessage(rollState('white'))
     flushSync()
-    applyServerMessage(rollState('white')) // повтор — нового перехода нет
+    applyServerMessage(rollState('white'))
     flushSync()
 
     expect(playRollCue).toHaveBeenCalledOnce()
@@ -499,7 +386,7 @@ describe('Game bear-off counter (#52)', () => {
   })
 
   test('Game_noneAllHome_noBearOffCounter', () => {
-    applyServerMessage(stateFixture()) // начальная позиция — ни у кого не все дома
+    applyServerMessage(stateFixture())
     render(Game, { props: noop })
 
     expect(screen.queryByTestId('bear-off-counter')).toBeNull()

@@ -2,7 +2,7 @@
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
   import Notifications from './components/Notifications.svelte'
-  import { createGame, logout } from './lib/api'
+  import { me } from './lib/api'
   import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
@@ -27,11 +27,6 @@
 
   // client === null → экран Connect; иначе → экран Game.
   let client = $state<WSClient | null>(null)
-  // Креды активной сессии — для личной ссылки возврата в Game.
-  let activeCreds = $state<Credentials | null>(null)
-  // Состояние create-and-enter из GameOver «Новая игра» (card #6).
-  let creatingNewGame = $state(false)
-  let newGameError = $state('')
 
   function startSession(creds: Credentials): void {
     const c = createClient(creds)
@@ -39,7 +34,6 @@
     c.onStateChange(setConnectionState)
     c.connect()
     client = c
-    activeCreds = creds
   }
 
   function handleAction(msg: ClientMessage): void {
@@ -85,30 +79,19 @@
   }
 
   // Закрыть сокет (стоп реконнект), сбросить креды и игровое состояние,
-  // вернуться к Connect. Путь для «Сменить игру» и UNAUTHORIZED.
+  // вернуться к Connect. Seat exit / UNAUTHORIZED — без logout аккаунта.
   function endSession(): void {
     client?.close()
     client = null
-    activeCreds = null
     clearCredentials()
     resetGameState()
     resetConnectionState()
     resetNotifications()
     resetChat()
-    creatingNewGame = false
-    newGameError = ''
-  }
-
-  // «Выйти» из Game: POST /api/logout, затем teardown. Ошибка — до endSession,
-  // чтобы Game показал alert и оставил seat/сокет.
-  async function handleLogout(): Promise<void> {
-    await logout()
-    endSession()
-    replaceGameQuery(null)
   }
 
   // Убирает token из адресной строки; опционально ставит/чистит ?game=.
-  // inviteGameId — $state, чтобы Connect после 401/новой игры не держал
+  // inviteGameId — $state, чтобы Connect после 401/seat-exit не держал
   // устаревший join-invite из значения, прочитанного на init.
   function replaceGameQuery(gameId: string | null): void {
     const url = new URL(location.href)
@@ -122,35 +105,10 @@
     inviteGameId = gameId
   }
 
-  // GameOver «Новая игра»: POST /api/games и сразу войти в новую сессию
-  // (FRONTEND_SPEC #22 / card #6). Сначала create, потом teardown — чтобы
-  // при ошибке оверлей остался и URL не менялся.
-  async function handleNewGame(): Promise<void> {
-    if (creatingNewGame) return
-    creatingNewGame = true
-    newGameError = ''
-    try {
-      const creds = await createGame()
-      endSession()
-      saveCredentials(creds)
-      replaceGameQuery(creds.gameId)
-      startSession(creds)
-    } catch (err) {
-      // ApiError и тестовые stubs с полем status — duck-type, без instanceof
-      // (мок ./lib/api в тестах подменяет класс).
-      const status =
-        typeof err === 'object' && err !== null && 'status' in err
-          ? (err as { status: unknown }).status
-          : undefined
-      if (status === 401) {
-        endSession()
-        replaceGameQuery(null)
-        return
-      }
-      newGameError = 'Не удалось создать игру'
-    } finally {
-      creatingNewGame = false
-    }
+  // GameOver «Выйти»: только seat teardown + clear ?game= (без logout аккаунта).
+  function handleExit(): void {
+    endSession()
+    replaceGameQuery(null)
   }
 
   // Убирает token из адресной строки, оставляя ?game=<id> (публичный) — чтобы
@@ -161,49 +119,51 @@
     window.history.replaceState(null, '', url.pathname + url.search)
   }
 
-  // Вход по приглашению: ?game=<id> в URL → Connect предложит войти в игру.
-  // initial* — одноразовый bootstrap; inviteGameId — $state, обновляется при
-  // create-and-enter / 401, чтобы Connect не держал stale join-invite.
+  // Вход по приглашению: ?game=<id> в URL → Connect предложит войти в игру
+  // (только после login). inviteGameId — $state, обновляется при seat-exit.
   const initialParams = new URLSearchParams(location.search)
   const initialGameId = initialParams.get('game')
   const urlToken = initialParams.get('token')
   let inviteGameId = $state<string | null>(initialGameId)
 
-  // Личная ссылка для возврата: ?game=<id>&token=<token>. Реконнектимся по ним
-  // (приоритет над сохранёнными — это явный заход по своей ссылке), сохраняем
-  // креды и убираем token из адресной строки (FRONTEND_SPEC #30). Иначе —
-  // авто-подключение по сохранённым кредам, минуя Connect (#24c).
-  const saved = loadCredentials()
-  if (initialGameId !== null && urlToken !== null) {
-    const creds = { gameId: initialGameId, token: urlToken }
-    saveCredentials(creds)
-    stripTokenFromUrl()
-    startSession(creds)
-  } else if (saved !== null && (initialGameId === null || saved.gameId === initialGameId)) {
-    // Авто-подключение по сохранённым кредам — только когда нет приглашения
-    // (обычный возврат) ИЛИ приглашение в СВОЮ же сохранённую игру
-    // (F5/повторный заход по ссылке). Если ?game= указывает на ДРУГУЮ игру —
-    // по saved не подключаемся: Connect покажет join-invite, игрок получит
-    // собственный токен (слот соперника). Иначе занял бы чужой слот — в одном
-    // браузере стал бы дублем создателя (White), и розыгрыш первого хода
-    // не запускался бы («оба бросают — ничего»).
-    startSession(saved)
-  }
+  // Auth gate (#19): await me() first. Only if nick present, reconnect from
+  // URL token / saved credentials. me fail → Connect (Вход); no board.
+  // While me pending, client stays null → Connect title-only (sessionChecked false).
+  $effect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        await me()
+      } catch {
+        // 401 / network — stay on Connect; do not open board from seat creds.
+        return
+      }
+      if (cancelled || client !== null) return
+
+      const saved = loadCredentials()
+      if (initialGameId !== null && urlToken !== null) {
+        const creds = { gameId: initialGameId, token: urlToken }
+        saveCredentials(creds)
+        stripTokenFromUrl()
+        startSession(creds)
+      } else if (saved !== null && (initialGameId === null || saved.gameId === initialGameId)) {
+        // Авто-подключение по сохранённым кредам — только когда нет приглашения
+        // (обычный возврат) ИЛИ приглашение в СВОЮ же сохранённую игру
+        // (F5/повторный заход по ссылке). Если ?game= указывает на ДРУГУЮ игру —
+        // по saved не подключаемся: Connect покажет join-invite.
+        startSession(saved)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  })
 </script>
 
 {#if client === null}
   <Connect onConnect={startSession} {inviteGameId} onLoggedOut={() => replaceGameQuery(null)} />
 {:else}
-  <Game
-    onAction={handleAction}
-    onNewGame={handleNewGame}
-    onLeave={endSession}
-    onLogout={handleLogout}
-    gameId={activeCreds?.gameId ?? null}
-    token={activeCreds?.token ?? null}
-    {creatingNewGame}
-    {newGameError}
-  />
+  <Game onAction={handleAction} onExit={handleExit} />
 {/if}
 
 <Notifications />
