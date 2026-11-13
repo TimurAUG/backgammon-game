@@ -144,8 +144,7 @@
         </div>
       </section>
     {:else if created !== null}
-      <!-- Игра создана: invite link + enter; no account logout -->
-      <p class="session" data-testid="session-nick">Вы вошли как {sessionNick}</p>
+      <!-- Игра создана: hint + invite + copy + enter; no session line, no account logout -->
       <p class="hint">Игра создана. Отправь сопернику ссылку:</p>
       <div class="invite">
         <input class="link" readonly value={inviteLink(created.gameId)} data-testid="invite-link" />

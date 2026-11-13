@@ -312,6 +312,11 @@ describe('Connect logout (card #13 / #19)', () => {
     await screen.findByTestId('invite-link')
 
     expect(screen.getByText(/игра создана/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Копировать' })).toBeInTheDocument()
+    expect(screen.getByTestId('enter-game')).toBeInTheDocument()
+    // Игра создана: no session line (design 03-igra-sozdana), no account logout
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+    expect(screen.queryByText('Вы вошли как Ann')).toBeNull()
     expect(screen.queryByTestId('logout')).toBeNull()
   })
 
