@@ -24,7 +24,6 @@
   const showRollForFirst = $derived(inFirstRollPhase && !sentRollForFirst)
   const showWaitingFirstRoll = $derived(inFirstRollPhase && sentRollForFirst)
   const showRoll = $derived(rolledForFirst && status === 'waitingForRoll' && myTurn)
-  const showEndTurn = $derived(status === 'waitingForMove' && myTurn)
   const showResign = $derived(status !== 'finished')
 
   // При disabled (реконнект) кнопки инертны даже если клик дошёл до
@@ -61,16 +60,6 @@
       onclick={() => act({ type: 'ROLL' })}
     >
       Бросить кубики
-    </button>
-  {/if}
-  {#if showEndTurn}
-    <button
-      data-testid="action-end-turn"
-      type="button"
-      {disabled}
-      onclick={() => act({ type: 'END_TURN' })}
-    >
-      Завершить ход
     </button>
   {/if}
   {#if showResign}

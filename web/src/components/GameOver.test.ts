@@ -1,5 +1,5 @@
 // FRONTEND_SPEC #21 — GameOver.svelte показывается при gameOver != null с winner+kind.
-// FRONTEND_SPEC #22 — Кнопка «Новая игра» зовёт onNewGame callback.
+// Card #19 — кнопка «Выйти» зовёт onExit (seat exit), без create-and-enter UI.
 
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import { describe, expect, test, vi } from 'vitest'
@@ -10,13 +10,13 @@ import GameOver from './GameOver.svelte'
 
 describe('GameOver visibility (#21)', () => {
   test('GameOver_null_rendersNothing', () => {
-    render(GameOver, { props: { gameOver: null, onNewGame: vi.fn() } })
+    render(GameOver, { props: { gameOver: null, onExit: vi.fn() } })
     expect(screen.queryByTestId('game-over')).toBeNull()
   })
 
   test('GameOver_setValue_rendersDialog', () => {
     render(GameOver, {
-      props: { gameOver: { winner: 'white', kind: 'oin' }, onNewGame: vi.fn() },
+      props: { gameOver: { winner: 'white', kind: 'oin' }, onExit: vi.fn() },
     })
     expect(screen.queryByTestId('game-over')).not.toBeNull()
   })
@@ -28,7 +28,7 @@ describe('GameOver winner & kind localization (#21)', () => {
     ['black', 'Чёрные'],
   ])('GameOver_winner%s_showsColorLabel', (winner, label) => {
     render(GameOver, {
-      props: { gameOver: { winner, kind: 'oin' }, onNewGame: vi.fn() },
+      props: { gameOver: { winner, kind: 'oin' }, onExit: vi.fn() },
     })
     expect(screen.getByTestId('game-over')).toHaveTextContent(label)
   })
@@ -39,7 +39,7 @@ describe('GameOver winner & kind localization (#21)', () => {
     ['koks', 'Кокс'],
   ])('GameOver_kind%s_showsKindLabel', (kind, label) => {
     render(GameOver, {
-      props: { gameOver: { winner: 'white', kind }, onNewGame: vi.fn() },
+      props: { gameOver: { winner: 'white', kind }, onExit: vi.fn() },
     })
     expect(screen.getByTestId('game-over')).toHaveTextContent(label)
   })
@@ -49,7 +49,7 @@ describe('GameOver winner & kind localization (#21)', () => {
       props: {
         gameOver: { winner: 'white', kind: 'mars' },
         myColor: 'white',
-        onNewGame: vi.fn(),
+        onExit: vi.fn(),
       },
     })
     expect(screen.getByTestId('game-over')).toHaveTextContent(/победил/i)
@@ -60,45 +60,31 @@ describe('GameOver winner & kind localization (#21)', () => {
       props: {
         gameOver: { winner: 'white', kind: 'mars' },
         myColor: 'black',
-        onNewGame: vi.fn(),
+        onExit: vi.fn(),
       },
     })
     expect(screen.getByTestId('game-over')).toHaveTextContent(/проигр/i)
   })
 })
 
-describe('GameOver new-game (#22)', () => {
-  test('GameOver_clickNewGame_callsCallback', async () => {
-    const onNewGame = vi.fn()
+describe('GameOver exit (#19 / #22)', () => {
+  test('GameOver_showsExitNotNewGame', () => {
     render(GameOver, {
-      props: { gameOver: { winner: 'black', kind: 'koks' }, onNewGame },
+      props: { gameOver: { winner: 'black', kind: 'koks' }, onExit: vi.fn() },
     })
 
-    await fireEvent.click(screen.getByTestId('action-new-game'))
-    expect(onNewGame).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('action-exit')).toHaveTextContent('Выйти')
+    expect(screen.queryByRole('button', { name: 'Новая игра' })).toBeNull()
+    expect(screen.queryByTestId('action-new-game')).toBeNull()
   })
 
-  test('GameOver_creating_disablesNewGameButton', () => {
+  test('GameOver_clickExit_callsOnExit', async () => {
+    const onExit = vi.fn()
     render(GameOver, {
-      props: {
-        gameOver: { winner: 'white', kind: 'oin' },
-        onNewGame: vi.fn(),
-        creating: true,
-      },
+      props: { gameOver: { winner: 'black', kind: 'koks' }, onExit },
     })
 
-    expect(screen.getByTestId('action-new-game')).toBeDisabled()
-  })
-
-  test('GameOver_error_showsAlert', () => {
-    render(GameOver, {
-      props: {
-        gameOver: { winner: 'white', kind: 'oin' },
-        onNewGame: vi.fn(),
-        error: 'Не удалось создать игру',
-      },
-    })
-
-    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось создать игру')
+    await fireEvent.click(screen.getByTestId('action-exit'))
+    expect(onExit).toHaveBeenCalledOnce()
   })
 })

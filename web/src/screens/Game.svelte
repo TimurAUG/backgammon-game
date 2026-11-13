@@ -13,28 +13,10 @@
 
   interface Props {
     onAction: (msg: ClientMessage) => void
-    onNewGame: () => void
-    onLeave: () => void
-    onLogout: () => Promise<void>
-    gameId?: string | null
-    token?: string | null
-    creatingNewGame?: boolean
-    newGameError?: string
+    onExit: () => void
   }
 
-  let {
-    onAction,
-    onNewGame,
-    onLeave,
-    onLogout,
-    gameId = null,
-    token = null,
-    creatingNewGame = false,
-    newGameError = '',
-  }: Props = $props()
-
-  let loggingOut = $state(false)
-  let logoutError = $state('')
+  let { onAction, onExit }: Props = $props()
 
   // Первый бросок уже состоялся, если был FIRST_ROLL, или кубики на столе,
   // или кто-то уже завершил свой первый ход. После розыгрыша победитель
@@ -96,31 +78,6 @@
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })
   }
-
-  // Личная ссылка для возврата в эту игру (в т.ч. с другого устройства):
-  // содержит token, поэтому она НЕ для соперника — только для себя.
-  const reconnectLink = $derived(
-    gameId !== null && token !== null
-      ? `${location.origin}/?game=${gameId}&token=${token}`
-      : null,
-  )
-
-  function copyReconnect(): void {
-    if (reconnectLink !== null) void navigator.clipboard?.writeText(reconnectLink)
-  }
-
-  async function handleLogout(): Promise<void> {
-    if (loggingOut) return
-    loggingOut = true
-    logoutError = ''
-    try {
-      await onLogout()
-    } catch {
-      logoutError = 'Не удалось выйти'
-    } finally {
-      loggingOut = false
-    }
-  }
 </script>
 
 <main class="game">
@@ -135,32 +92,7 @@
         <div data-testid="seat-nicks-opponent">{oppNick}</div>
       </div>
     {/if}
-    {#if reconnectLink !== null}
-      <div class="reconnect">
-        <span class="reconnect-label">Ссылка для возврата:</span>
-        <input
-          class="reconnect-link"
-          readonly
-          value={reconnectLink}
-          data-testid="reconnect-link"
-          title="Открой эту ссылку на другом устройстве, чтобы вернуться в игру"
-        />
-        <button type="button" data-testid="copy-reconnect" onclick={copyReconnect}>
-          Копировать
-        </button>
-      </div>
-    {/if}
-    <div class="toolbar-right">
-      <button type="button" class="leave" data-testid="logout" onclick={handleLogout}>Выйти</button>
-      <button type="button" class="leave" data-testid="switch-game" onclick={onLeave}>
-        Сменить игру
-      </button>
-    </div>
   </header>
-
-  {#if logoutError !== ''}
-    <p class="error" role="alert">{logoutError}</p>
-  {/if}
 
   {#if blocked}
     <div class="reconnecting" role="status" aria-live="polite" data-testid="reconnecting-banner">
@@ -196,13 +128,7 @@
       />
     {/if}
   </aside>
-  <GameOver
-    gameOver={gameState.gameOver}
-    myColor={gameState.myColor}
-    {onNewGame}
-    creating={creatingNewGame}
-    error={newGameError}
-  />
+  <GameOver gameOver={gameState.gameOver} myColor={gameState.myColor} {onExit} />
   <Chat myColor={gameState.myColor} {onAction} />
 </main>
 
@@ -227,13 +153,6 @@
     gap: 0.75rem;
     justify-content: flex-start;
   }
-  .toolbar-right {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-shrink: 0;
-    margin-left: auto;
-  }
   .seat-nicks {
     display: flex;
     flex-direction: column;
@@ -244,58 +163,9 @@
     color: #2a1e10;
     line-height: 1.25;
     text-align: left;
-    flex-shrink: 0;
-  }
-  .reconnect {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex: 1;
-    min-width: 0;
-  }
-  .reconnect-label {
-    font-size: 12px;
-    color: #5a3a1e;
-    white-space: nowrap;
-  }
-  .reconnect-link {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid #c19a6b;
-    border-radius: 4px;
-    padding: 0.3rem 0.4rem;
-    font-size: 12px;
-    color: #2a1e10;
-    background: #f4ece1;
-  }
-  .reconnect button {
-    border: 1px solid #5a3a1e;
-    background: #f4ece1;
-    border-radius: 4px;
-    padding: 0.3rem 0.6rem;
-    font-size: 12px;
-    font-weight: 600;
-    color: #2a1e10;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .leave {
-    background: transparent;
-    color: #5a3a1e;
-    border: 1px solid #5a3a1e;
-    border-radius: 6px;
-    padding: 0.35rem 0.75rem;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .leave:hover {
-    background: #e7c79b;
-  }
-  .error {
-    color: #8b1c1c;
-    font-size: 14px;
-    font-weight: 600;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
   }
   .first-roll {
     background: #f4ece1;

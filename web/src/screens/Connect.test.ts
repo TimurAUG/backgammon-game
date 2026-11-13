@@ -1,6 +1,7 @@
 // FRONTEND_SPEC #23 / card #11 — Connect.svelte: create + invite only
 // (manual gameId+token form removed). Card #4 — nick/password Log in /
-// Register + me-on-mount.
+// Register + me-on-mount. Card #19 — auth gate: create/join only when logged in;
+// Вошли / Игра создана / invite layouts.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -25,23 +26,36 @@ beforeEach(() => {
   vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
 })
 
-describe('Connect default (#11 / #23)', () => {
-  test('Connect_default_showsCreateGameWithoutManualEntry', async () => {
-    render(Connect, { props: { onConnect: vi.fn() } })
+describe('Connect anonymous / auth gate (#19)', () => {
+  test('Connect_anonymous_hidesCreateAndJoin', async () => {
+    render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
-    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Register' })).toBeInTheDocument()
+    expect(screen.queryByTestId('create-game')).toBeNull()
+    expect(screen.queryByTestId('join-invite')).toBeNull()
+    expect(screen.queryByTestId('invite-link')).toBeNull()
+    expect(screen.queryByText(/игра создана/i)).toBeNull()
+  })
+
+  test('Connect_default_loggedIn_showsCreateGameWithoutManualEntry', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
+
     expect(screen.queryByText('или войти вручную')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Подключиться' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Токен')).not.toBeInTheDocument()
   })
 })
 
-describe('Connect invite (#29)', () => {
+describe('Connect invite (#29 / #19)', () => {
   test('Connect_createGame_rendersInviteLinkWithGameId', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('create-game'))
 
@@ -50,9 +64,10 @@ describe('Connect invite (#29)', () => {
   })
 
   test('Connect_createGame_persistsCredentials', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('create-game'))
     await screen.findByTestId('invite-link')
@@ -61,10 +76,11 @@ describe('Connect invite (#29)', () => {
   })
 
   test('Connect_afterCreate_enterGame_callsOnConnect', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     const onConnect = vi.fn()
     render(Connect, { props: { onConnect } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('create-game'))
     await fireEvent.click(await screen.findByTestId('enter-game'))
@@ -72,11 +88,25 @@ describe('Connect invite (#29)', () => {
     expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-new', token: 'tok' })
   })
 
+  test('Connect_loggedInWithInvite_showsJoin', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
+
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
+    expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument()
+    expect(screen.getByText('Тебя пригласили в игру.')).toBeInTheDocument()
+    expect(screen.queryByTestId('create-game')).toBeNull()
+    expect(screen.queryByTestId('logout')).toBeNull()
+    expect(screen.queryByLabelText('Ник')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull()
+  })
+
   test('Connect_inviteGameId_join_callsJoinGameAndOnConnect', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(joinGame).mockResolvedValue({ gameId: 'g-inv', token: 'tok2' })
     const onConnect = vi.fn()
     render(Connect, { props: { onConnect, inviteGameId: 'g-inv' } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('join-invite'))
 
@@ -87,17 +117,33 @@ describe('Connect invite (#29)', () => {
   })
 
   test('Connect_inviteGameId_doesNotShowManualEntry', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
-    await waitFor(() => expect(me).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
 
-    expect(screen.getByTestId('join-invite')).toBeInTheDocument()
     expect(screen.queryByText('или войти вручную')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Подключиться' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Токен')).not.toBeInTheDocument()
   })
+
+  test('Connect_loginWithInvite_showsJoinWithoutReload', async () => {
+    vi.mocked(login).mockResolvedValue({ nick: 'Ann' })
+    render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    expect(screen.queryByTestId('join-invite')).toBeNull()
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Ann' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
+    expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument()
+    expect(screen.queryByTestId('create-game')).toBeNull()
+    expect(screen.queryByTestId('logout')).toBeNull()
+  })
 })
 
-describe('Connect auth (#4)', () => {
+describe('Connect auth (#4 / #19)', () => {
   test('Connect_withoutSession_showsNickPasswordLoginRegister', async () => {
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
@@ -121,9 +167,24 @@ describe('Connect auth (#4)', () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     render(Connect, { props: { onConnect: vi.fn() } })
 
-    await waitFor(() => expect(screen.getByText('Ann')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'Log in' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Register' })).not.toBeInTheDocument()
+  })
+
+  test('Connect_loggedIn_showsVoshliCreateAndAccountLogout', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.getByTestId('logout')).toHaveTextContent('Выйти из аккаунта')
+    // Logout is under create, not side-by-side nick-row.
+    const create = screen.getByTestId('create-game')
+    const logoutBtn = screen.getByTestId('logout')
+    expect(
+      create.compareDocumentPosition(logoutBtn) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   test('Connect_register_callsRegisterApi_setsSessionNick', async () => {
@@ -136,7 +197,7 @@ describe('Connect auth (#4)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Register' }))
 
     expect(register).toHaveBeenCalledWith('Ann', 'password1')
-    await waitFor(() => expect(screen.getByText('Ann')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
     expect(screen.getByTestId('create-game')).toBeInTheDocument()
   })
 
@@ -150,7 +211,7 @@ describe('Connect auth (#4)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
 
     expect(login).toHaveBeenCalledWith('Bob', 'password1')
-    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Вы вошли как Bob')).toBeInTheDocument())
   })
 
   test('Connect_register409_showsError', async () => {
@@ -209,7 +270,7 @@ describe('Connect auth (#4)', () => {
     await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Ann' } })
     await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
     await fireEvent.click(screen.getByRole('button', { name: 'Register' }))
-    await waitFor(() => expect(screen.getByText('Ann')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     expect(localStorage.getItem('nardy.credentials')).toBeNull()
     const all = JSON.stringify(localStorage)
@@ -230,29 +291,42 @@ describe('Connect auth (#4)', () => {
   })
 })
 
-describe('Connect logout (card #13)', () => {
-  test('Connect_loggedIn_showsLogoutNextToNick', async () => {
+describe('Connect logout (card #13 / #19)', () => {
+  test('Connect_loggedIn_showsAccountLogoutUnderCreate', async () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     render(Connect, { props: { onConnect: vi.fn() } })
 
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
-    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Выйти из аккаунта' })).toBeInTheDocument()
     expect(screen.getByTestId('logout')).toBeInTheDocument()
     expect(screen.getByTestId('create-game')).toBeInTheDocument()
   })
 
-  test('Connect_afterCreate_logoutStillNextToNick', async () => {
+  test('Connect_afterCreate_hidesAccountLogout', async () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('create-game'))
     await screen.findByTestId('invite-link')
 
-    expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann')
-    expect(screen.getByTestId('logout')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+    expect(screen.getByText(/игра создана/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('logout')).toBeNull()
+  })
+
+  test('Connect_accountLogout_showsVhod', async () => {
+    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(logout).mockResolvedValue(undefined)
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Register' })).toBeInTheDocument()
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+    expect(screen.queryByTestId('create-game')).toBeNull()
   })
 
   test('Connect_logoutSuccess_showsLoginFormAndClearsSeat', async () => {
@@ -261,10 +335,9 @@ describe('Connect logout (card #13)', () => {
     vi.mocked(logout).mockResolvedValue(undefined)
     const onLoggedOut = vi.fn()
     render(Connect, { props: { onConnect: vi.fn(), onLoggedOut } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
-    await fireEvent.click(screen.getByTestId('create-game'))
-    await screen.findByTestId('invite-link')
-    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok' })
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    // Logout only on Вошли (not after create); logout before create.
+    expect(loadCredentials()).toBeNull()
 
     await fireEvent.click(screen.getByTestId('logout'))
 
@@ -281,7 +354,7 @@ describe('Connect logout (card #13)', () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
     vi.mocked(logout).mockResolvedValue(undefined)
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('logout'))
 
@@ -289,22 +362,18 @@ describe('Connect logout (card #13)', () => {
     expect(screen.queryByTestId('session-nick')).toBeNull()
   })
 
-  test('Connect_logoutFailure_keepsNickAndSeatShowsAlert', async () => {
+  test('Connect_logoutFailure_keepsNickAndShowsAlert', async () => {
     vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
-    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     vi.mocked(logout).mockRejectedValue(new Error('network'))
     const onLoggedOut = vi.fn()
     render(Connect, { props: { onConnect: vi.fn(), onLoggedOut } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
-    await fireEvent.click(screen.getByTestId('create-game'))
-    await screen.findByTestId('invite-link')
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('logout'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
-    expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann')
-    expect(screen.getByTestId('invite-link')).toBeInTheDocument()
-    expect(loadCredentials()).toEqual({ gameId: 'g-new', token: 'tok' })
+    expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument()
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
     expect(onLoggedOut).not.toHaveBeenCalled()
   })
 
@@ -316,7 +385,7 @@ describe('Connect logout (card #13)', () => {
     })
     vi.mocked(logout).mockReturnValue(pending)
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('logout'))
     await fireEvent.click(screen.getByTestId('logout'))
@@ -331,7 +400,7 @@ describe('Connect logout (card #13)', () => {
     vi.mocked(logout).mockResolvedValue(undefined)
     saveCredentials({ gameId: 'g-1', token: 'tok-1' })
     render(Connect, { props: { onConnect: vi.fn() } })
-    await waitFor(() => expect(screen.getByTestId('session-nick')).toHaveTextContent('Ann'))
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
 
     await fireEvent.click(screen.getByTestId('logout'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())

@@ -4,18 +4,10 @@
   interface Props {
     gameOver: { winner: Color; kind: WinKind } | null
     myColor?: Color | null
-    onNewGame: () => void
-    creating?: boolean
-    error?: string
+    onExit: () => void
   }
 
-  let {
-    gameOver,
-    myColor = null,
-    onNewGame,
-    creating = false,
-    error = '',
-  }: Props = $props()
+  let { gameOver, myColor = null, onExit }: Props = $props()
 
   function colorLabel(c: Color): string {
     return c === 'white' ? 'Белые' : 'Чёрные'
@@ -45,17 +37,8 @@
       <p class="subtitle">
         {colorLabel(gameOver.winner)} · {kindLabel(gameOver.kind)}
       </p>
-      {#if error}
-        <p class="error" role="alert">{error}</p>
-      {/if}
-      <button
-        type="button"
-        class="primary"
-        data-testid="action-new-game"
-        disabled={creating}
-        onclick={onNewGame}
-      >
-        Новая игра
+      <button type="button" class="primary" data-testid="action-exit" onclick={onExit}>
+        Выйти
       </button>
     </div>
   </div>
@@ -88,11 +71,6 @@
     margin: 0 0 1rem;
     opacity: 0.8;
   }
-  .error {
-    margin: 0 0 0.75rem;
-    color: #8b1a1a;
-    font-size: 13px;
-  }
   .primary {
     background: #2a1e10;
     color: #f4ece1;
@@ -103,11 +81,7 @@
     font-weight: 600;
     cursor: pointer;
   }
-  .primary:hover:not(:disabled) {
+  .primary:hover {
     background: #5a3a1e;
-  }
-  .primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 </style>
