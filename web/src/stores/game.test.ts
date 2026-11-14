@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, test } from 'vitest'
 
+import { stateFixture } from '../../tests/fixtures'
 import { applyServerMessage, gameState, resetGameState } from './game.svelte'
 
 beforeEach(() => {
@@ -286,5 +287,16 @@ describe('applyServerMessage FIRST_ROLL (#2)', () => {
     resetGameState()
 
     expect(gameState.firstRoll).toBeNull()
+  })
+
+  test('gameStore_STATE_afterFIRST_ROLL_keepsFirstRoll', () => {
+    // Card #25 AC3 / edge — nick-only STATE must not clear firstRoll.
+    applyServerMessage({ type: 'FIRST_ROLL', firstRoll: { white: 5, black: 3 } })
+    applyServerMessage(
+      stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }),
+    )
+
+    expect(gameState.firstRoll).toEqual({ white: 5, black: 3 })
+    expect(gameState.nicks).toEqual({ white: 'Alice', black: 'Bob' })
   })
 })

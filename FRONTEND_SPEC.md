@@ -122,7 +122,11 @@ UI событие ─► gameStore action ─► WSClient.send ─► WebSocket
 
 [AMENDED 2026-11-12 — card #17, source card #15] Game chrome also shows a seat-nick block (same screen; no new panel or pattern): line 1 is the current player's nick and their color word («Белые» / «Чёрные» from `myColor`); line 2 is the opponent's nick. Seat nicks come from `STATE.nicks { white, black }` in the game store — the client must not invent them. A seat with an empty nick string displays as «Гость». Board, Dice, ActionBar, first-roll / «Твой бросок» banners, and BearOffCounter keep color words. Toolbar controls («Копировать», «Сменить игру», reconnect banner) stay.
 
-[AMENDED 2026-11-12 — card #16 Verify] The seat-nick block is in the **top-left** of the Game toolbar (first chrome on the left), not top-right. Own line remains `{nick} · {Белые|Чёрные}`; opponent line remains nick or «Гость». Reconnect / «Копировать» follow the nick block; «Выйти» / «Сменить игру» stay on the right.
+[AMENDED 2026-11-14 — card #25] Empty **opponent** nick on the Game toolbar shows italic «Ожидание игрока...» (not «Гость»). Own empty nick and Chat empty-nick author labels stay «Гость». A nick-only `STATE` must not clear `gameState.firstRoll`; after the opening is decided, reconnect recovers `FIRST_ROLL` from the server so ActionBar does not stick on `waiting-first-roll`.
+
+[AMENDED 2026-11-12 — card #16 Verify] The seat-nick block is in the **top-left** of the Game toolbar (first chrome on the left), not top-right. Own line remains `{nick} · {Белые|Чёрные}`; opponent line remains nick or «Гость».
+
+[AMENDED 2026-11-14 — card #25] Opponent line: nick or italic «Ожидание игрока...» when empty. Reconnect / «Копировать» follow the nick block; «Выйти» / «Сменить игру» stay on the right.
 
 [AMENDED 2026-11-13 — card #20, source card #18] Mid-game Game chrome: seat-nick block (top-left, #16/#17) and reconnect status stay; no personal return link («Ссылка для возврата»), no header «Копировать», no «Выйти», no «Сменить игру». ActionBar shows «Бросить за первый ход» (`ROLL_FOR_FIRST`) and «Бросить кубики» (`ROLL`) as today, and «Сдаться» (`RESIGN`); it does not show «Завершить ход» (`END_TURN`) and does not replace it — automatic pass when there is no legal move stays. Chat and nicks stay. The only ways off the board mid-game are resign (loss by Кокс) or finishing by the existing win rules.
 

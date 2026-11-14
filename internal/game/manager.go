@@ -50,7 +50,7 @@ var ErrGameNotFound = errors.New("game not found")
 // бросков и две позиции для соединений игроков (индексируются по
 // domain.Color). Параллельно хранятся токены — для реконнекта.
 //
-// Поля conns/tokens/rolledForFirst защищены mu.
+// Поля conns/tokens/rolledForFirst/firstRoll защищены mu.
 type Game struct {
 	ID    string
 	State domain.GameState
@@ -61,7 +61,12 @@ type Game struct {
 	nicks          [2]string // seat nick from create/join session; "" = guest
 	rng            io.Reader
 	rolledForFirst [2]bool
-	chat           []ChatMessage
+	// firstRoll — значения розыгрыша первого хода (1–6), когда оба сигнала
+	// ROLL_FOR_FIRST уже обработаны. [0,0] = ещё не решено. Card #25: нужны
+	// при реконнекте, чтобы повторно выслать FIRST_ROLL (bool-флаги одни
+	// не восстанавливают UI).
+	firstRoll [2]uint8
+	chat      []ChatMessage
 
 	// storage — куда персистится игра. nil → in-memory only (тесты домена,
 	// memoryStorage). Установлен Manager.JoinGame после Load/Create.
@@ -99,6 +104,39 @@ func (g *Game) RolledForFirst() [2]bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.rolledForFirst
+}
+
+// FirstRollValues возвращает сохранённые значения розыгрыша первого хода.
+// [0,0] — розыгрыш ещё не состоялся.
+func (g *Game) FirstRollValues() [2]uint8 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.firstRoll
+}
+
+// SetFirstRollValues восстанавливает значения розыгрыша из Storage (LoadGame).
+func (g *Game) SetFirstRollValues(v [2]uint8) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.firstRoll = v
+}
+
+// FirstRollMessage возвращает FIRST_ROLL для (ре)коннекта, если розыгрыш
+// уже состоялся; иначе nil. Card #25 — зеркало LEGAL_MOVES-on-reconnect.
+func (g *Game) FirstRollMessage() *protocol.ServerMessage {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.firstRoll[domain.White] == 0 || g.firstRoll[domain.Black] == 0 {
+		return nil
+	}
+	msg := protocol.ServerMessage{
+		Type: "FIRST_ROLL",
+		FirstRoll: &protocol.FirstRollPayload{
+			White: int(g.firstRoll[domain.White]),
+			Black: int(g.firstRoll[domain.Black]),
+		},
+	}
+	return &msg
 }
 
 // Opponent возвращает соединение соперника для цвета c или nil, если соперник
@@ -384,6 +422,8 @@ func (g *Game) RollForFirst(c domain.Color) error {
 		g.State.Turn = winner
 		g.State.Dice = domain.Dice{}
 		g.State.Status = domain.StatusWaitingForRoll
+		g.firstRoll[domain.White] = firstWhite
+		g.firstRoll[domain.Black] = firstBlack
 		break
 	}
 
@@ -680,25 +720,30 @@ func (m *Manager) CreateGame(nick string) (string, string, error) {
 // генерит token (16 байт), кладёт в первый пустой слот tokens и записывает
 // nick, сохраняет. Предпочитает live-объект из active (если создатель уже
 // на WS), чтобы Postgres LoadGame не оставил in-memory партию без ника
-// второго. При подключённом сопернике шлёт свежий STATE с обновлёнными
-// nicks. ErrGameNotFound / ErrRoomFull как раньше.
+// второго. Card #25: держит m.mu на время Load+reserve, чтобы concurrent
+// JoinGame не зарегистрировал другую копию *Game в active (иначе host
+// видит пустой black nick, пока Postgres уже хранит joiner). При
+// подключённом сопернике шлёт свежий STATE с обновлёнными nicks.
+// ErrGameNotFound / ErrRoomFull как раньше.
 func (m *Manager) JoinByID(gameID, nick string) (string, error) {
+	token, err := generateID(m.ids, 16)
+	if err != nil {
+		return "", err
+	}
+
+	// Serialize with JoinGame's registry section so REST join and WS share
+	// one *Game when Storage returns a fresh copy on every LoadGame.
 	m.mu.Lock()
 	g, inActive := m.active[gameID]
-	m.mu.Unlock()
 	if !inActive {
 		var ok bool
 		g, ok = m.storage.LoadGame(gameID)
 		if !ok {
+			m.mu.Unlock()
 			return "", ErrGameNotFound
 		}
 		g.rng = m.rng
 		g.storage = m.storage
-	}
-
-	token, err := generateID(m.ids, 16)
-	if err != nil {
-		return "", err
 	}
 
 	g.mu.Lock()
@@ -717,9 +762,14 @@ func (m *Manager) JoinByID(gameID, nick string) (string, error) {
 	g.mu.Unlock()
 
 	if !reserved {
+		m.mu.Unlock()
 		return "", ErrRoomFull
 	}
-	if err := m.storage.SaveGame(g); err != nil {
+	// Persist before releasing m.mu so a concurrent JoinGame LoadGame sees
+	// the joiner nick (card #25 race with copy-on-load Storage).
+	err = m.storage.SaveGame(g)
+	m.mu.Unlock()
+	if err != nil {
 		return "", err
 	}
 	return token, nil

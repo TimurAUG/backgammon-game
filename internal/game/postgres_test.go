@@ -1,6 +1,7 @@
 package game_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -168,4 +169,30 @@ func TestPostgresStorage_PersistsSeatNicks(t *testing.T) {
 	emptyLoaded, ok := storage.LoadGame(emptyID)
 	require.True(t, ok)
 	require.Equal(t, [2]string{"", ""}, emptyLoaded.Nicks())
+}
+
+// Card #25 — opening-roll values round-trip through Postgres.
+func TestPostgresStorage_PersistsFirstRollValues(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithStorage(storage, rng)
+	gameID, whiteTok, err := mgr.CreateGame("Alice")
+	require.NoError(t, err)
+	blackTok, err := mgr.JoinByID(gameID, "Bob")
+	require.NoError(t, err)
+
+	_, gw, err := mgr.JoinGame(gameID, whiteTok, &mockConn{})
+	require.NoError(t, err)
+	_, gb, err := mgr.JoinGame(gameID, blackTok, &mockConn{})
+	require.NoError(t, err)
+	require.NoError(t, gw.RollForFirst(domain.White))
+	require.NoError(t, gb.RollForFirst(domain.Black))
+	require.Equal(t, [2]uint8{5, 3}, gw.FirstRollValues())
+
+	loaded, ok := storage.LoadGame(gameID)
+	require.True(t, ok)
+	require.Equal(t, [2]uint8{5, 3}, loaded.FirstRollValues())
 }
