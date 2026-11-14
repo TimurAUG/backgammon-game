@@ -117,8 +117,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Card #25: после открытия розыгрыша FIRST_ROLL нужно восстановить на
+	// (ре)коннекте — иначе UI зависает в waiting-first-roll (сервер no-op
+	// на повторный ROLL_FOR_FIRST). Зеркало LEGAL_MOVES-on-reconnect.
+	if fr := g.FirstRollMessage(); fr != nil {
+		if err := pc.Send(*fr); err != nil {
+			return
+		}
+	}
 	if opp := g.Opponent(color); opp != nil {
 		_ = opp.Send(protocol.ServerMessage{Type: "OPPONENT_JOINED"})
+		// Card #25 AC1: nicks только из STATE. OPPONENT_JOINED имени не несёт —
+		// шлём сопернику свежий STATE, чтобы хост увидел nick без reload.
+		_ = opp.Send(game.StateMessage(g.State, g.Nicks()))
 	}
 
 	for {

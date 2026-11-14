@@ -215,9 +215,10 @@ func TestHandler_JoinSendsJoinedWithColor(t *testing.T) {
 
 // TestHandler_SecondJoinNotifiesFirst — интеграционный тест на два клиента
 // в одной игре: второй JOIN → второй получает STATE; первый клиент,
-// уже ожидавший в read-loop, получает OPPONENT_JOINED.
+// уже ожидавший в read-loop, получает OPPONENT_JOINED и свежий STATE
+// (card #25 — nicks на STATE, не на OPPONENT_JOINED).
 //
-// TDD plan #34 (часть 1).
+// TDD plan #34 (часть 1) / card #25 AC1.
 func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 	mgr := game.NewManager()
 	srv := httptest.NewServer(ws.NewHandler(mgr))
@@ -237,8 +238,9 @@ func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 	state2 := readMessage(t, ctx, conn2)
 	require.Equal(t, "STATE", state2.Type)
 
-	opp := readMessage(t, ctx, conn1)
+	opp, nickState := readOpponentNotify(t, ctx, conn1)
 	require.Equal(t, "OPPONENT_JOINED", opp.Type)
+	require.Equal(t, "STATE", nickState.Type)
 }
 
 // dialAndJoin подключается с уникальным токеном в Authorization-header.
@@ -282,7 +284,7 @@ func TestHandler_RollForFirst(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -319,7 +321,7 @@ func TestHandler_RollForFirst_SendsFirstRollValues(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -360,7 +362,7 @@ func TestHandler_RollForFirst_WinnerRollsAgain(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -415,7 +417,7 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -474,7 +476,7 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
-	_ = readMessage(t, ctx, conn1)
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -676,9 +678,10 @@ func TestHandler_Reconnect(t *testing.T) {
 	state3 := readMessage(t, ctx, conn3)
 	require.Equal(t, "STATE", state3.Type)
 
-	opp := readMessage(t, ctx, conn2)
+	opp, nickState := readOpponentNotify(t, ctx, conn2)
 	require.Equal(t, "OPPONENT_JOINED", opp.Type,
 		"новый white-conn (после реконнекта) должен получить OPPONENT_JOINED при входе black")
+	require.Equal(t, "STATE", nickState.Type)
 }
 
 // TestHandler_Reconnect_SendsLegalMovesOnOwnTurn — инвариант протокола:
@@ -706,7 +709,7 @@ func TestHandler_Reconnect_SendsLegalMovesOnOwnTurn(t *testing.T) {
 	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -740,6 +743,65 @@ func TestHandler_Reconnect_SendsLegalMovesOnOwnTurn(t *testing.T) {
 		{From: 24, To: 19, Pip: 5},
 		{From: 24, To: 21, Pip: 3},
 	}, legal.Moves)
+
+	fr := readMessage(t, ctx, conn1b)
+	require.Equal(t, "FIRST_ROLL", fr.Type,
+		"card #25: reconnect after opening must re-send FIRST_ROLL")
+	require.NotNil(t, fr.FirstRoll)
+	require.Equal(t, 5, fr.FirstRoll.White)
+	require.Equal(t, 3, fr.FirstRoll.Black)
+}
+
+// TestHandler_Reconnect_AfterOpening_SendsFirstRoll — card #25 edge: after both
+// ROLL_FOR_FIRST and a disconnect, rejoin recovers FIRST_ROLL (server no-ops a
+// second ROLL_FOR_FIRST, so the client must not rely on that).
+func TestHandler_Reconnect_AfterOpening_SendsFirstRoll(t *testing.T) {
+	rng := bytes.NewReader([]byte{4, 2})
+	mgr := game.NewManagerWithRand(rng)
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	_ = readMessage(t, ctx, conn1)
+	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
+	_ = readMessage(t, ctx, conn2)
+	_, _ = readOpponentNotify(t, ctx, conn1)
+
+	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
+	require.NoError(t, err)
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, rfr))
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, rfr))
+	_ = readMessage(t, ctx, conn1) // STATE
+	_ = readMessage(t, ctx, conn2)
+	_ = readMessage(t, ctx, conn1) // FIRST_ROLL
+	_ = readMessage(t, ctx, conn2)
+
+	conn1.Close(websocket.StatusNormalClosure, "reload")
+	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
+
+	st := readMessage(t, ctx, conn1b)
+	require.Equal(t, "STATE", st.Type)
+	fr := readMessage(t, ctx, conn1b)
+	require.Equal(t, "FIRST_ROLL", fr.Type)
+	require.NotNil(t, fr.FirstRoll)
+	require.Equal(t, 5, fr.FirstRoll.White)
+	require.Equal(t, 3, fr.FirstRoll.Black)
+}
+
+// readOpponentNotify drains OPPONENT_JOINED plus the follow-up STATE (card #25).
+func readOpponentNotify(t *testing.T, ctx context.Context, conn *websocket.Conn) (joined, state protocol.ServerMessage) {
+	t.Helper()
+	joined = readMessage(t, ctx, conn)
+	require.Equal(t, "OPPONENT_JOINED", joined.Type)
+	state = readMessage(t, ctx, conn)
+	require.Equal(t, "STATE", state.Type)
+	return joined, state
 }
 
 // dialAndJoinWithToken подключается с явно заданным токеном в
@@ -776,7 +838,7 @@ func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*webso
 	_ = readMessage(t, ctx, conn1)
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
 	_ = readMessage(t, ctx, conn2)
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	rfr, err := json.Marshal(protocol.ClientMessage{Type: "ROLL_FOR_FIRST"})
 	require.NoError(t, err)
@@ -824,7 +886,7 @@ func TestHandler_Chat_BroadcastsToBothPlayers(t *testing.T) {
 	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	chat, err := json.Marshal(protocol.ClientMessage{Type: "CHAT", Text: "привет"})
 	require.NoError(t, err)
@@ -860,7 +922,7 @@ func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
 	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	chat, err := json.Marshal(protocol.ClientMessage{Type: "CHAT", Text: "до связи"})
 	require.NoError(t, err)
@@ -903,7 +965,7 @@ func TestHandler_Resign_BroadcastsGameOverKoks(t *testing.T) {
 	conn2 := dialAndJoin(t, ctx, wsURL, "g1") // black
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
-	_ = readMessage(t, ctx, conn1) // OPPONENT_JOINED
+	_, _ = readOpponentNotify(t, ctx, conn1)
 
 	resign, err := json.Marshal(protocol.ClientMessage{Type: "RESIGN"})
 	require.NoError(t, err)

@@ -216,13 +216,29 @@ describe('Game seat nicks (card #16 / #19)', () => {
     expect(kids[0]).toBe(screen.getByTestId('seat-nicks'))
   })
 
-  test('Game_seatNicks_emptyOpponent_showsGuest', () => {
+  test('Game_seatNicks_emptyOpponent_showsWaitingForPlayer', () => {
+    // Card #25 AC2 — empty opponent nick → italic «Ожидание игрока...», not «Гость».
     applyServerMessage({ type: 'JOINED', color: 'white' })
     applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: '' } }))
     render(Game, { props: noop })
 
-    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Гость$/)
-    expect(screen.getByTestId('seat-nicks-opponent')).not.toHaveTextContent('Чёрные')
+    const opp = screen.getByTestId('seat-nicks-opponent')
+    expect(opp).toHaveTextContent(/^Ожидание игрока\.\.\.$/)
+    expect(opp).toHaveClass('seat-nicks-waiting')
+    expect(opp).not.toHaveTextContent('Гость')
+    expect(opp).not.toHaveTextContent('Чёрные')
+  })
+
+  test('Game_seatNicks_stateUpdatesOpponentNickWithoutReload', () => {
+    // Card #25 AC1 — nick STATE after join updates opponent line in place.
+    applyServerMessage({ type: 'JOINED', color: 'white' })
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: '' } }))
+    render(Game, { props: noop })
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Ожидание игрока\.\.\.$/)
+
+    applyServerMessage(stateFixture({ nicks: { white: 'Alice', black: 'Bob' } }))
+    flushSync()
+    expect(screen.getByTestId('seat-nicks-opponent')).toHaveTextContent(/^Bob$/)
   })
 
   test('Game_seatNicks_blackPerspective_swapsOwnAndOpponent', () => {
