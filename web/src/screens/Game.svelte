@@ -78,18 +78,31 @@
   function handleMove(from: number, to: number): void {
     onAction({ type: 'MOVE', from, to })
   }
+
+  // $derived so nick STATE after mount updates the toolbar (card #25 AC1).
+  // {@const} inside {#if myColor} would not re-run when only nicks change.
+  const ownNick = $derived(
+    gameState.myColor !== null ? gameState.nicks[gameState.myColor] || 'Гость' : '',
+  )
+  const oppColor = $derived(
+    gameState.myColor === 'white' ? 'black' : gameState.myColor === 'black' ? 'white' : null,
+  )
+  const oppNick = $derived(oppColor !== null ? gameState.nicks[oppColor] : '')
+  const colorWord = $derived(
+    gameState.myColor === 'white' ? 'Белые' : gameState.myColor === 'black' ? 'Чёрные' : '',
+  )
 </script>
 
 <main class="game">
   <header class="toolbar">
     {#if gameState.myColor !== null}
-      {@const ownNick = gameState.nicks[gameState.myColor] || 'Гость'}
-      {@const oppColor = gameState.myColor === 'white' ? 'black' : 'white'}
-      {@const oppNick = gameState.nicks[oppColor] || 'Гость'}
-      {@const colorWord = gameState.myColor === 'white' ? 'Белые' : 'Чёрные'}
       <div class="seat-nicks" data-testid="seat-nicks">
         <div data-testid="seat-nicks-own">{ownNick} · {colorWord}</div>
-        <div data-testid="seat-nicks-opponent">{oppNick}</div>
+        {#if oppNick}
+          <div data-testid="seat-nicks-opponent">{oppNick}</div>
+        {:else}
+          <div data-testid="seat-nicks-opponent" class="seat-nicks-waiting">Ожидание игрока...</div>
+        {/if}
       </div>
     {/if}
   </header>
@@ -166,6 +179,11 @@
     overflow-wrap: anywhere;
     word-break: break-word;
     max-width: 100%;
+  }
+  .seat-nicks-waiting {
+    font-style: italic;
+    font-weight: 500;
+    color: #5a3a1e;
   }
   .first-roll {
     background: #f4ece1;

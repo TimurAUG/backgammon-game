@@ -199,10 +199,12 @@ func RollDice(r io.Reader) Dice                            // r = crypto/rand
 
 [AMENDED 2026-11-12 — card #17, source card #15] `CHAT` remains `{ sender, text }` and `CHAT_HISTORY` remains `{ chat: [{sender,text}] }` with `sender` the seat color (`"white"` / `"black"`). The protocol does not add a nick field on chat messages; clients resolve the visible author label from `STATE.nicks[sender]` (empty → guest display on the client).
 
+[AMENDED 2026-11-14 — card #25] Opening-roll die values are persisted with the game when both seats have signaled `ROLL_FOR_FIRST` and the opening is decided. On (re)JOIN, after `STATE` (and `LEGAL_MOVES` / `CHAT_HISTORY` when applicable), the server re-sends `FIRST_ROLL` with those values when the opening was already decided — same reconnect recovery pattern as `LEGAL_MOVES`. A successful WS JOIN while an opponent is connected also sends that opponent a fresh `STATE` (with nicks) after `OPPONENT_JOINED`, so the host sees the joiner nick without reload. `JoinByID` and `JoinGame` share one live `*Game` via the active registry lock so a copy-on-load Storage cannot leave the host's in-memory seat nick empty while Postgres already has the joiner.
+
 Правила протокола:
 - `STATE` — полный снапшот, клиент не реконструирует частично.
 - На каждое валидное `MOVE` сервер пересчитывает `LEGAL_MOVES` и шлёт обоим.
-- На реконнект клиент получает `STATE` + `LEGAL_MOVES`.
+- На реконнект клиент получает `STATE` + `LEGAL_MOVES`, и `FIRST_ROLL` если розыгрыш первого хода уже состоялся.
 
 ---
 
