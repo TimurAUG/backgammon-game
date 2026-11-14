@@ -197,6 +197,24 @@ describe('api auth (#4)', () => {
     await expect(me()).rejects.toThrow(/unexpected response shape/)
   })
 
+  test('me_negativePlayed_throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          nick: 'Carla',
+          played: -1,
+          wins: 0,
+          losses: 0,
+          win_percent: 0,
+        }),
+      }),
+    )
+
+    await expect(me()).rejects.toThrow(/unexpected response shape/)
+  })
+
   test('logout_postsWithCredentialsInclude', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetchMock)

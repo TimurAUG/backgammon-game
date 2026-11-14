@@ -464,28 +464,29 @@ describe('Connect account stats (card #23)', () => {
   })
 
   test('Connect_meReturnsRecord_rendersServerNumbersWithoutRecompute', async () => {
+    // win_percent intentionally ≠ Math.round(wins/played*100) so a recomputing client fails.
     vi.mocked(me).mockResolvedValue(
-      meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }),
+      meOk('Ann', { played: 10, wins: 3, losses: 7, win_percent: 42 }),
     )
     render(Connect, { props: { onConnect: vi.fn() } })
 
     await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
-    expect(screen.getByTestId('stats-played')).toHaveTextContent('42')
-    expect(screen.getByTestId('stats-wins')).toHaveTextContent('27')
-    expect(screen.getByTestId('stats-losses')).toHaveTextContent('15')
-    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('64%')
+    expect(screen.getByTestId('stats-played')).toHaveTextContent('10')
+    expect(screen.getByTestId('stats-wins')).toHaveTextContent('3')
+    expect(screen.getByTestId('stats-losses')).toHaveTextContent('7')
+    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('42%')
   })
 
   test('Connect_winPercent64_renders64PercentSuffix', async () => {
+    // Server 64% with wins/played that would recompute to 30% — must show «64%».
     vi.mocked(me).mockResolvedValue(
-      meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }),
+      meOk('Ann', { played: 10, wins: 3, losses: 7, win_percent: 64 }),
     )
     render(Connect, { props: { onConnect: vi.fn() } })
 
     await waitFor(() => expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('64%'))
-    // Client must not recompute from wins/played (e.g. Math.round(27/42*100) === 64
-    // happens to match; assert exact server integer string only).
     expect(screen.getByTestId('stats-win-percent').textContent).toBe('64%')
+    expect(screen.queryByText('30%')).toBeNull()
   })
 
   test('Connect_meUnauthorized_statsBlockAbsent', async () => {
@@ -536,6 +537,43 @@ describe('Connect account stats (card #23)', () => {
     expect(screen.getByTestId('stats-wins')).toHaveTextContent('2')
     expect(screen.getByTestId('stats-losses')).toHaveTextContent('1')
     expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('67%')
+  })
+
+  test('Connect_registerSuccess_refetchesMeForStats', async () => {
+    vi.mocked(register).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann', { played: 10, wins: 3, losses: 7, win_percent: 42 }))
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Ann' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+    expect(me).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('stats-played')).toHaveTextContent('10')
+    expect(screen.getByTestId('stats-wins')).toHaveTextContent('3')
+    expect(screen.getByTestId('stats-losses')).toHaveTextContent('7')
+    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('42%')
+  })
+
+  test('Connect_loginSuccess_meFails_statsBlockAbsent', async () => {
+    vi.mocked(login).mockResolvedValue({ nick: 'Bob' })
+    vi.mocked(me).mockReset()
+    vi.mocked(me).mockRejectedValueOnce(unauthorized).mockRejectedValueOnce(unauthorized)
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Bob' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(2))
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+    expect(screen.queryByText('0%')).toBeNull()
+    expect(screen.queryByTestId('session-nick')).toBeNull()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/не удалось/i)
   })
 
   test('Connect_logoutSuccess_statsBlockAbsent', async () => {

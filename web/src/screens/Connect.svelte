@@ -72,13 +72,20 @@
     error = ''
     try {
       await register(nick, password)
-      // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
-      const result = await me()
-      applyMe(result)
-      password = ''
     } catch (err) {
       clearSession()
       error = authErrorMessage(err)
+      return
+    }
+    // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
+    try {
+      const result = await me()
+      applyMe(result)
+      password = ''
+    } catch {
+      clearSession()
+      // Session-read failure is not a wrong password — keep a neutral message.
+      error = 'Не удалось выполнить вход'
     }
   }
 
@@ -86,13 +93,20 @@
     error = ''
     try {
       await login(nick, password)
-      // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
-      const result = await me()
-      applyMe(result)
-      password = ''
     } catch (err) {
       clearSession()
       error = authErrorMessage(err)
+      return
+    }
+    // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
+    try {
+      const result = await me()
+      applyMe(result)
+      password = ''
+    } catch {
+      clearSession()
+      // Session-read failure is not a wrong password — keep a neutral message.
+      error = 'Не удалось выполнить вход'
     }
   }
 

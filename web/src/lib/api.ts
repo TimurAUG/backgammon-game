@@ -62,7 +62,12 @@ function parseNick(url: string, data: unknown): NickResponse {
 }
 
 function isNonNegInt(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value)
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    Number.isFinite(value) &&
+    value >= 0
+  )
 }
 
 function parseMe(url: string, data: unknown): MeResponse {
