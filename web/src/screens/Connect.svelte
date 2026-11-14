@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createGame, joinGame, login, logout, me, register } from '../lib/api'
+  import { createGame, joinGame, login, logout, me, register, type MeResponse } from '../lib/api'
   import { clearCredentials, saveCredentials, type Credentials } from '../lib/credentials'
 
   let {
@@ -15,19 +15,36 @@
   let nick = $state('')
   let password = $state('')
   let sessionNick = $state<string | null>(null)
+  let sessionStats = $state<Omit<MeResponse, 'nick'> | null>(null)
   let created = $state<Credentials | null>(null)
   let error = $state('')
   let sessionChecked = $state(false)
   let loggingOut = $state(false)
+
+  function applyMe(result: MeResponse): void {
+    sessionNick = result.nick
+    sessionStats = {
+      played: result.played,
+      wins: result.wins,
+      losses: result.losses,
+      win_percent: result.win_percent,
+    }
+  }
+
+  function clearSession(): void {
+    sessionNick = null
+    sessionStats = null
+  }
 
   $effect(() => {
     let cancelled = false
     void (async () => {
       try {
         const result = await me()
-        if (!cancelled) sessionNick = result.nick
+        if (!cancelled) applyMe(result)
       } catch {
-        // 401 / network — stay anonymous; show login/register.
+        // 401 / network / malformed — stay anonymous; show login/register.
+        // Do not invent a zero stats record.
       } finally {
         if (!cancelled) sessionChecked = true
       }
@@ -54,10 +71,13 @@
   async function handleRegister(): Promise<void> {
     error = ''
     try {
-      const result = await register(nick, password)
-      sessionNick = result.nick
+      await register(nick, password)
+      // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
+      const result = await me()
+      applyMe(result)
       password = ''
     } catch (err) {
+      clearSession()
       error = authErrorMessage(err)
     }
   }
@@ -65,10 +85,13 @@
   async function handleLogin(): Promise<void> {
     error = ''
     try {
-      const result = await login(nick, password)
-      sessionNick = result.nick
+      await login(nick, password)
+      // Auth body is nick-only — re-fetch GET /api/me for stats (card #23).
+      const result = await me()
+      applyMe(result)
       password = ''
     } catch (err) {
+      clearSession()
       error = authErrorMessage(err)
     }
   }
@@ -111,7 +134,7 @@
     try {
       await logout()
       clearCredentials()
-      sessionNick = null
+      clearSession()
       created = null
       password = ''
       onLoggedOut?.()
@@ -121,6 +144,13 @@
       loggingOut = false
     }
   }
+
+  const showStats = $derived(
+    sessionNick !== null &&
+      sessionStats !== null &&
+      created === null &&
+      inviteGameId === null,
+  )
 </script>
 
 <main class="connect">
@@ -161,7 +191,7 @@
         Войти в игру
       </button>
     {:else}
-      <!-- Вошли: session + create + account logout stacked -->
+      <!-- Вошли: session + create + account logout + stats stacked -->
       <p class="session" data-testid="session-nick">Вы вошли как {sessionNick}</p>
       <button type="button" class="primary" data-testid="create-game" onclick={handleCreate}>
         Создать игру
@@ -169,6 +199,27 @@
       <button type="button" class="primary account-logout" data-testid="logout" onclick={handleLogout}>
         Выйти из аккаунта
       </button>
+      {#if showStats && sessionStats !== null}
+        <section class="stats" data-testid="account-stats">
+          <h2>Статистика</h2>
+          <div class="stats-row">
+            <span>Сыграно игр</span>
+            <span data-testid="stats-played">{sessionStats.played}</span>
+          </div>
+          <div class="stats-row">
+            <span>Победы</span>
+            <span data-testid="stats-wins">{sessionStats.wins}</span>
+          </div>
+          <div class="stats-row">
+            <span>Поражения</span>
+            <span data-testid="stats-losses">{sessionStats.losses}</span>
+          </div>
+          <div class="stats-row">
+            <span>Процент побед</span>
+            <span data-testid="stats-win-percent">{sessionStats.win_percent}%</span>
+          </div>
+        </section>
+      {/if}
     {/if}
   {/if}
 
@@ -235,6 +286,24 @@
   }
   .account-logout {
     margin-top: 0;
+  }
+  .stats {
+    margin-top: 0.75rem;
+  }
+  .stats h2 {
+    margin: 0 0 0.5rem;
+    font-size: 14px;
+    font-weight: 600;
+    color: #2a1e10;
+    text-align: left;
+  }
+  .stats-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 14px;
+    color: #2a1e10;
+    margin-bottom: 0.35rem;
   }
   .invite {
     display: flex;

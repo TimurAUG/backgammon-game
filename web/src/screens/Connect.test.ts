@@ -1,12 +1,12 @@
 // FRONTEND_SPEC #23 / card #11 — Connect.svelte: create + invite only
 // (manual gameId+token form removed). Card #4 — nick/password Log in /
 // Register + me-on-mount. Card #19 — auth gate: create/join only when logged in;
-// Вошли / Игра создана / invite layouts.
+// Вошли / Игра создана / invite layouts. Card #23 — «Статистика» under logout.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, joinGame, login, logout, me, register } from '../lib/api'
+import { createGame, joinGame, login, logout, me, register, type MeResponse } from '../lib/api'
 import { loadCredentials, saveCredentials } from '../lib/credentials'
 
 import Connect from './Connect.svelte'
@@ -20,10 +20,29 @@ vi.mock('../lib/api', () => ({
   logout: vi.fn(),
 }))
 
+function meOk(nick: string, stats: Partial<Omit<MeResponse, 'nick'>> = {}): MeResponse {
+  return {
+    nick,
+    played: 0,
+    wins: 0,
+    losses: 0,
+    win_percent: 0,
+    ...stats,
+  }
+}
+
+const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 })
+
+/** Mount me() fails (Вход), then post-login/register me() succeeds. */
+function mockAuthThenMe(result: MeResponse): void {
+  vi.mocked(me).mockReset()
+  vi.mocked(me).mockRejectedValueOnce(unauthorized).mockResolvedValue(result)
+}
+
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
-  vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
+  vi.mocked(me).mockRejectedValue(unauthorized)
 })
 
 describe('Connect anonymous / auth gate (#19)', () => {
@@ -40,7 +59,7 @@ describe('Connect anonymous / auth gate (#19)', () => {
   })
 
   test('Connect_default_loggedIn_showsCreateGameWithoutManualEntry', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
 
@@ -52,7 +71,7 @@ describe('Connect anonymous / auth gate (#19)', () => {
 
 describe('Connect invite (#29 / #19)', () => {
   test('Connect_createGame_rendersInviteLinkWithGameId', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
@@ -64,7 +83,7 @@ describe('Connect invite (#29 / #19)', () => {
   })
 
   test('Connect_createGame_persistsCredentials', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
@@ -76,7 +95,7 @@ describe('Connect invite (#29 / #19)', () => {
   })
 
   test('Connect_afterCreate_enterGame_callsOnConnect', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     const onConnect = vi.fn()
     render(Connect, { props: { onConnect } })
@@ -89,7 +108,7 @@ describe('Connect invite (#29 / #19)', () => {
   })
 
   test('Connect_loggedInWithInvite_showsJoin', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
 
     await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
@@ -102,7 +121,7 @@ describe('Connect invite (#29 / #19)', () => {
   })
 
   test('Connect_inviteGameId_join_callsJoinGameAndOnConnect', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(joinGame).mockResolvedValue({ gameId: 'g-inv', token: 'tok2' })
     const onConnect = vi.fn()
     render(Connect, { props: { onConnect, inviteGameId: 'g-inv' } })
@@ -117,7 +136,7 @@ describe('Connect invite (#29 / #19)', () => {
   })
 
   test('Connect_inviteGameId_doesNotShowManualEntry', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
     await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
 
@@ -128,6 +147,7 @@ describe('Connect invite (#29 / #19)', () => {
 
   test('Connect_loginWithInvite_showsJoinWithoutReload', async () => {
     vi.mocked(login).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
@@ -164,7 +184,7 @@ describe('Connect auth (#4 / #19)', () => {
   })
 
   test('Connect_onMount_me200_showsNick', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
 
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -173,7 +193,7 @@ describe('Connect auth (#4 / #19)', () => {
   })
 
   test('Connect_loggedIn_showsVoshliCreateAndAccountLogout', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
 
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -189,6 +209,7 @@ describe('Connect auth (#4 / #19)', () => {
 
   test('Connect_register_callsRegisterApi_setsSessionNick', async () => {
     vi.mocked(register).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
@@ -203,6 +224,7 @@ describe('Connect auth (#4 / #19)', () => {
 
   test('Connect_login_callsLoginApi_setsSessionNick', async () => {
     vi.mocked(login).mockResolvedValue({ nick: 'Bob' })
+    mockAuthThenMe(meOk('Bob'))
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
@@ -264,6 +286,7 @@ describe('Connect auth (#4 / #19)', () => {
 
   test('Connect_register_doesNotWritePasswordToLocalStorage', async () => {
     vi.mocked(register).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
@@ -279,6 +302,7 @@ describe('Connect auth (#4 / #19)', () => {
 
   test('Connect_registerSuccess_staysOnConnectWithCreateGame', async () => {
     vi.mocked(register).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(me).toHaveBeenCalled())
 
@@ -293,7 +317,7 @@ describe('Connect auth (#4 / #19)', () => {
 
 describe('Connect logout (card #13 / #19)', () => {
   test('Connect_loggedIn_showsAccountLogoutUnderCreate', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(Connect, { props: { onConnect: vi.fn() } })
 
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -303,7 +327,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_afterCreate_hidesAccountLogout', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -321,7 +345,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_accountLogout_showsVhod', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(logout).mockResolvedValue(undefined)
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -335,7 +359,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_logoutSuccess_showsLoginFormAndClearsSeat', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
     vi.mocked(logout).mockResolvedValue(undefined)
     const onLoggedOut = vi.fn()
@@ -356,7 +380,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_logoutIdempotent_missingCookie_stillShowsLoginForm', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(logout).mockResolvedValue(undefined)
     render(Connect, { props: { onConnect: vi.fn() } })
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -368,7 +392,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_logoutFailure_keepsNickAndShowsAlert', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(logout).mockRejectedValue(new Error('network'))
     const onLoggedOut = vi.fn()
     render(Connect, { props: { onConnect: vi.fn(), onLoggedOut } })
@@ -383,7 +407,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_logoutInFlight_ignoresRepeatClicks', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     let resolveLogout!: () => void
     const pending = new Promise<void>((resolve) => {
       resolveLogout = resolve
@@ -401,7 +425,7 @@ describe('Connect logout (card #13 / #19)', () => {
   })
 
   test('Connect_logout_doesNotWritePasswordOrNickToStorage', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     vi.mocked(logout).mockResolvedValue(undefined)
     saveCredentials({ gameId: 'g-1', token: 'tok-1' })
     render(Connect, { props: { onConnect: vi.fn() } })
@@ -414,5 +438,117 @@ describe('Connect logout (card #13 / #19)', () => {
     const all = JSON.stringify(localStorage)
     expect(all).not.toContain('Ann')
     expect(all).not.toContain('password')
+  })
+})
+
+describe('Connect account stats (card #23)', () => {
+  test('Connect_meReturnsZeros_showsStatsBlockWithZeros', async () => {
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: 'Статистика' })).toBeInTheDocument()
+    expect(screen.getByText('Сыграно игр')).toBeInTheDocument()
+    expect(screen.getByText('Победы')).toBeInTheDocument()
+    expect(screen.getByText('Поражения')).toBeInTheDocument()
+    expect(screen.getByText('Процент побед')).toBeInTheDocument()
+    expect(screen.getByTestId('stats-played')).toHaveTextContent('0')
+    expect(screen.getByTestId('stats-wins')).toHaveTextContent('0')
+    expect(screen.getByTestId('stats-losses')).toHaveTextContent('0')
+    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('0%')
+    const logoutBtn = screen.getByTestId('logout')
+    const stats = screen.getByTestId('account-stats')
+    expect(
+      logoutBtn.compareDocumentPosition(stats) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  test('Connect_meReturnsRecord_rendersServerNumbersWithoutRecompute', async () => {
+    vi.mocked(me).mockResolvedValue(
+      meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }),
+    )
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+    expect(screen.getByTestId('stats-played')).toHaveTextContent('42')
+    expect(screen.getByTestId('stats-wins')).toHaveTextContent('27')
+    expect(screen.getByTestId('stats-losses')).toHaveTextContent('15')
+    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('64%')
+  })
+
+  test('Connect_winPercent64_renders64PercentSuffix', async () => {
+    vi.mocked(me).mockResolvedValue(
+      meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }),
+    )
+    render(Connect, { props: { onConnect: vi.fn() } })
+
+    await waitFor(() => expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('64%'))
+    // Client must not recompute from wins/played (e.g. Math.round(27/42*100) === 64
+    // happens to match; assert exact server integer string only).
+    expect(screen.getByTestId('stats-win-percent').textContent).toBe('64%')
+  })
+
+  test('Connect_meUnauthorized_statsBlockAbsent', async () => {
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+    expect(screen.queryByText('0%')).toBeNull()
+  })
+
+  test('Connect_afterCreate_statsBlockAbsent', async () => {
+    vi.mocked(me).mockResolvedValue(meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }))
+    vi.mocked(createGame).mockResolvedValue({ gameId: 'g-new', token: 'tok' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+
+    await fireEvent.click(screen.getByTestId('create-game'))
+    await screen.findByTestId('invite-link')
+
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+  })
+
+  test('Connect_inviteJoinBranch_statsBlockAbsent', async () => {
+    vi.mocked(me).mockResolvedValue(meOk('Ann', { played: 42, wins: 27, losses: 15, win_percent: 64 }))
+    render(Connect, { props: { onConnect: vi.fn(), inviteGameId: 'g-inv' } })
+
+    await waitFor(() => expect(screen.getByTestId('join-invite')).toBeInTheDocument())
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+    expect(screen.queryByTestId('logout')).toBeNull()
+  })
+
+  test('Connect_loginSuccess_refetchesMeForStats', async () => {
+    vi.mocked(login).mockResolvedValue({ nick: 'Bob' })
+    mockAuthThenMe(meOk('Bob', { played: 3, wins: 2, losses: 1, win_percent: 67 }))
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Bob' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+    expect(me).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('stats-played')).toHaveTextContent('3')
+    expect(screen.getByTestId('stats-wins')).toHaveTextContent('2')
+    expect(screen.getByTestId('stats-losses')).toHaveTextContent('1')
+    expect(screen.getByTestId('stats-win-percent')).toHaveTextContent('67%')
+  })
+
+  test('Connect_logoutSuccess_statsBlockAbsent', async () => {
+    vi.mocked(me).mockResolvedValue(meOk('Ann', { played: 5, wins: 3, losses: 2, win_percent: 60 }))
+    vi.mocked(logout).mockResolvedValue(undefined)
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByTestId('account-stats')).toBeInTheDocument())
+
+    await fireEvent.click(screen.getByTestId('logout'))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+    expect(screen.queryByText('0%')).toBeNull()
   })
 })
