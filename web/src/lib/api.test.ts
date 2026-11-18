@@ -5,7 +5,16 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, joinGame, login, logout, me, register } from './api'
+import {
+  ApiError,
+  createGame,
+  joinGame,
+  login,
+  logout,
+  me,
+  register,
+  resumeActiveGame,
+} from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -243,5 +252,62 @@ describe('api auth (#4)', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }))
 
     await expect(me()).rejects.toMatchObject({ status: 401 })
+  })
+})
+
+// Card #33 — GET /api/games/active (resume/reclaim from #32).
+describe('api resume (card #33)', () => {
+  test('resumeActiveGame_getsActive_returnsCredentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ gameId: 'g-active', token: 'tok-active' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const creds = await resumeActiveGame()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/games/active', {
+      method: 'GET',
+      credentials: 'include',
+    })
+    expect(creds).toEqual({ gameId: 'g-active', token: 'tok-active' })
+  })
+
+  test('resumeActiveGame_includesCredentialsInclude', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ gameId: 'g-1', token: 'tok-1' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resumeActiveGame()
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(init).toMatchObject({ credentials: 'include' })
+  })
+
+  test('resumeActiveGame_on404_throwsApiErrorWithStatus', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+
+    await expect(resumeActiveGame()).rejects.toMatchObject({ status: 404 })
+    await expect(resumeActiveGame()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  test('resumeActiveGame_on500_throwsApiErrorWithStatus', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+
+    await expect(resumeActiveGame()).rejects.toMatchObject({ status: 500 })
+  })
+
+  test('resumeActiveGame_badShape_throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ gameId: 1, token: null }),
+      }),
+    )
+
+    await expect(resumeActiveGame()).rejects.toThrow(/unexpected response shape/)
   })
 })

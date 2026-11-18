@@ -32,12 +32,7 @@ async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> 
   return fetch(url, { ...init, credentials: 'include' })
 }
 
-async function postCredentials(url: string): Promise<Credentials> {
-  const resp = await apiFetch(url, { method: 'POST' })
-  if (!resp.ok) {
-    throw new ApiError(url, resp.status)
-  }
-  const data: unknown = await resp.json()
+function parseCredentials(url: string, data: unknown): Credentials {
   if (
     typeof data !== 'object' ||
     data === null ||
@@ -48,6 +43,14 @@ async function postCredentials(url: string): Promise<Credentials> {
   }
   const { gameId, token } = data as Credentials
   return { gameId, token }
+}
+
+async function postCredentials(url: string): Promise<Credentials> {
+  const resp = await apiFetch(url, { method: 'POST' })
+  if (!resp.ok) {
+    throw new ApiError(url, resp.status)
+  }
+  return parseCredentials(url, await resp.json())
 }
 
 function parseNick(url: string, data: unknown): NickResponse {
@@ -112,6 +115,17 @@ export function createGame(): Promise<Credentials> {
 // joinGame входит в существующую игру по id; возвращает креды второго игрока.
 export function joinGame(gameId: string): Promise<Credentials> {
   return postCredentials(`/api/games/${encodeURIComponent(gameId)}/join`)
+}
+
+// resumeActiveGame — GET /api/games/active (#32): reclaim the caller's sole
+// unfinished seat. 404 when none; never invents credentials (card #33).
+export async function resumeActiveGame(): Promise<Credentials> {
+  const url = '/api/games/active'
+  const resp = await apiFetch(url, { method: 'GET' })
+  if (!resp.ok) {
+    throw new ApiError(url, resp.status)
+  }
+  return parseCredentials(url, await resp.json())
 }
 
 export function register(nick: string, password: string): Promise<NickResponse> {

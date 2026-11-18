@@ -6,7 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, logout, me, type MeResponse } from './lib/api'
+import { createGame, logout, me, resumeActiveGame, type MeResponse } from './lib/api'
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
@@ -25,7 +25,10 @@ vi.mock('./lib/api', () => ({
   login: vi.fn(),
   me: vi.fn(),
   logout: vi.fn(),
+  resumeActiveGame: vi.fn(),
 }))
+
+const resumeNotFound = Object.assign(new Error('no active game'), { status: 404 })
 
 beforeEach(() => {
   localStorage.clear()
@@ -41,6 +44,8 @@ beforeEach(() => {
   vi.mocked(me).mockRejectedValue(Object.assign(new Error('unauthorized'), { status: 401 }))
   vi.mocked(logout).mockReset()
   vi.mocked(logout).mockResolvedValue(undefined)
+  vi.mocked(resumeActiveGame).mockReset()
+  vi.mocked(resumeActiveGame).mockRejectedValue(resumeNotFound)
 })
 
 function testCreateClient(creds: Credentials): WSClient {
@@ -524,5 +529,120 @@ describe('App connection state (#26e)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// Card #33 / FRONTEND_SPEC [AMENDED 2026-11-18 — card #34] — resume after me.
+describe('App resume unfinished game (card #33)', () => {
+  test('App_meOkNoSavedCreds_resumeReturnsSeat_startsGame', async () => {
+    // Wrong: stay on Вошли when resume returns seat credentials.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-active', token: 'tok-active' })
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitForBoard()
+    MockWebSocket.last().acceptOpen()
+
+    expect(resumeActiveGame).toHaveBeenCalledOnce()
+    expect(loadCredentials()).toEqual({ gameId: 'g-active', token: 'tok-active' })
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-active', token: 'tok-active' }),
+    )
+    expect(screen.queryByTestId('create-game')).toBeNull()
+  })
+
+  test('App_meOk_resumeNotFound_showsVoshli', async () => {
+    // Wrong: open a board when there is no unfinished game.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockRejectedValue(resumeNotFound)
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(resumeActiveGame).toHaveBeenCalledOnce()
+  })
+
+  test('App_meOk_resumeNotFoundAfterFinished_showsVoshli', async () => {
+    // Wrong: auto-open a finished game (server returns 404 for finished).
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockRejectedValue(resumeNotFound)
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(loadCredentials()).toBeNull()
+  })
+
+  test('App_meOk_resumeNetworkError_showsVoshliKeepsSession', async () => {
+    // Wrong: clear session cookie / invent board on resume 5xx.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockRejectedValue(
+      Object.assign(new Error('server'), { status: 500 }),
+    )
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.queryByTestId('point-1')).toBeNull()
+    expect(logout).not.toHaveBeenCalled()
+    expect(loadCredentials()).toBeNull()
+  })
+
+  test('App_meOk_queryGameOwnId_noToken_resumeStartsSameGame', async () => {
+    // Wrong: create a second seat or stay on join-invite for own active id.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-own', token: 'tok-own' })
+    window.history.replaceState(null, '', '/?game=g-own')
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitForBoard()
+    MockWebSocket.last().acceptOpen()
+
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-own', token: 'tok-own' }),
+    )
+    expect(screen.queryByTestId('join-invite')).toBeNull()
+  })
+
+  test('App_meOk_foreignInvite_resumeOwnGame_opensOwnNotInvite', async () => {
+    // Wrong: show foreign invite-join CTA while user has a different active game.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-own', token: 'tok-own' })
+    window.history.replaceState(null, '', '/?game=g-foreign')
+    render(App, { props: { createClient: testCreateClient } })
+
+    await waitForBoard()
+    MockWebSocket.last().acceptOpen()
+
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-own', token: 'tok-own' }),
+    )
+    expect(screen.queryByTestId('join-invite')).toBeNull()
+  })
+
+  test('App_savedCreds_autoConnect_doesNotCallResume', async () => {
+    // Wrong: call resume when usable nardy.credentials already exist.
+    enterWithSavedCreds('g-saved', 'tok-saved')
+    await waitForBoard()
+
+    expect(resumeActiveGame).not.toHaveBeenCalled()
+  })
+
+  test('App_urlToken_preferredOverResume', async () => {
+    // Wrong: ignore ?game=&token= and call resume instead.
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-other', token: 'tok-other' })
+    window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
+    render(App, { props: { createClient: testCreateClient } })
+    await waitForBoard()
+
+    MockWebSocket.last().acceptOpen()
+    expect(MockWebSocket.last().sent).toContain(
+      JSON.stringify({ type: 'JOIN', gameId: 'g-url', token: 'tok-url' }),
+    )
+    expect(resumeActiveGame).not.toHaveBeenCalled()
   })
 })
