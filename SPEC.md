@@ -94,6 +94,8 @@
 
 [AMENDED 2026-11-11 — card #5, source card #1] `/internal/transport/rest` also serves user auth: `POST /api/register`, `POST /api/login`, `GET /api/me`, `POST /api/logout`. User and session rows live in the same Postgres as games (`DATABASE_URL` / `InitSchema`); no separate database.
 
+[AMENDED 2026-11-18 — card #31, source card #27] `/internal/transport/rest` also serves creator cancel of a created game: `DELETE /api/games/{id}` (session cookie required). Create and join remain `POST /api/games` and `POST /api/games/{id}/join`.
+
 Принципы:
 - `domain` не зависит ни от чего, кроме stdlib. Все правила нард — там.
 - `game` оркеструет сессии: хранит `GameState`, принимает действия, рассылает обновления.
@@ -113,6 +115,8 @@
 [NEW 2026-11-18 — card #34, source card #28] **Resume / reclaim by session.** With a valid session cookie, an authenticated resume/reclaim REST call returns that user's sole unfinished seat as `{ gameId, token }` — the **existing** stored seat token for that seat (same JSON shape as create/join); it must not mint a second token for the same seat and must not invent credentials when the user has no unfinished game (not-found / no active game). WebSocket auth remains the seat token only (session cookie not required on WS). Exact route path is an Implementation detail of build card #32; the contract is the behaviour above.
 
 [AMENDED 2026-11-18 — card #34, source card #28] With a valid session, `POST /api/games` refuses to create another game while the caller already has an unfinished active game (conflict) and does not issue a new seat. `POST /api/games/{id}/join` must not seat a user who already has a different unfinished game into a second seat; their existing unfinished seat stays theirs. A host-created game with no opponent yet («Игра создана») is still the host's active game and is reclaimable. `POST /api/logout` ends only the current session cookie; it does not resign, finish the game, or clear the seat user id / seat token on the server — the next login of that nick can reclaim the same active game. Move rules, dice, resign = Кокс, and WS seat-token auth stay unchanged.
+
+[NEW 2026-11-18 — card #31, source card #27] **Creator cancel / delete of a created game.** The creating user's session may cancel an unfinished game with `DELETE /api/games/{id}` (session cookie required, same cookie rules as create/join). Success → `204` No Content: the game is removed from the active registry and from storage so a later `POST /api/games/{id}/join` for that id returns `404` (`ErrGameNotFound`), and a WS `JOIN` / reconnect for that id fails as not found. Any live WebSocket seats on that game are dropped without finishing: the server sends `ERROR { code: "GAME_NOT_FOUND" }` (no `GAME_OVER`, no finished status) and closes those seats. The deleted unfinished game does not increment `played`, `wins`, or `losses` for either seat (aligned with finished-only stats above). Without a valid session cookie → `401` and the game is not deleted. With a valid session whose user id is not the creating (white) seat's stored user id → `403` and the game is not deleted. Unknown or already-deleted id → `404`. A game that is already finished → `409` and is not deleted (stats stay as counted at finish). Cancel is not resign, not mid-game leave scoring, and not account logout; create/join, move rules, dice, and WS seat-token auth stay unchanged.
 
 ---
 
@@ -360,3 +364,5 @@ Persistence (#36) сохраняет состояние, но `LoadGame` отд�
 - Логирование всех ходов для разбора жалоб.
 
 [AMENDED 2026-11-11 — card #5, source card #1] In addition to the per-game seat token on WS: user passwords are stored only as argon2id or bcrypt hashes; never log or return plaintext passwords. Session cookies are HttpOnly, Secure on https, SameSite=Lax, 30-day lifetime, backed by Postgres so they survive process restart. Create/join game REST endpoints require a valid session cookie (`401` without). WS game-seat auth is unchanged.
+
+[AMENDED 2026-11-18 — card #31, source card #27] Creator cancel `DELETE /api/games/{id}` also requires a valid session cookie (`401` without). Only the creating user's session may delete; other authenticated callers get `403`. WS game-seat auth is unchanged; after a successful delete, connected seats are told `GAME_NOT_FOUND` and must not be treated as a finished game.
