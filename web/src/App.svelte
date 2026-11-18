@@ -2,7 +2,7 @@
   import Connect from './screens/Connect.svelte'
   import Game from './screens/Game.svelte'
   import Notifications from './components/Notifications.svelte'
-  import { me } from './lib/api'
+  import { me, resumeActiveGame } from './lib/api'
   import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
   import type { ClientMessage, ServerMessage } from './protocol/messages'
   import { resetConnectionState, setConnectionState } from './stores/connection.svelte'
@@ -128,6 +128,7 @@
 
   // Auth gate (#19): await me() first. Only if nick present, reconnect from
   // URL token / saved credentials. me fail → Connect (Вход); no board.
+  // Card #33: when those paths miss, resume unfinished seat via GET /api/games/active.
   // While me pending, client stays null → Connect title-only (sessionChecked false).
   $effect(() => {
     let cancelled = false
@@ -150,8 +151,19 @@
         // Авто-подключение по сохранённым кредам — только когда нет приглашения
         // (обычный возврат) ИЛИ приглашение в СВОЮ же сохранённую игру
         // (F5/повторный заход по ссылке). Если ?game= указывает на ДРУГУЮ игру —
-        // по saved не подключаемся: Connect покажет join-invite.
+        // по saved не подключаемся: try resume below (own active wins over foreign invite).
         startSession(saved)
+      } else {
+        // Cookie-only reopen / foreign ?game= without token: reclaim unfinished seat.
+        try {
+          const creds = await resumeActiveGame()
+          if (cancelled || client !== null) return
+          saveCredentials(creds)
+          replaceGameQuery(creds.gameId)
+          startSession(creds)
+        } catch {
+          // 404 / network / 5xx — stay on Connect (Вошли or invite); keep session cookie.
+        }
       }
     })()
     return () => {

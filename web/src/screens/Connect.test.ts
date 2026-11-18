@@ -6,7 +6,16 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, joinGame, login, logout, me, register, type MeResponse } from '../lib/api'
+import {
+  createGame,
+  joinGame,
+  login,
+  logout,
+  me,
+  register,
+  resumeActiveGame,
+  type MeResponse,
+} from '../lib/api'
 import { loadCredentials, saveCredentials } from '../lib/credentials'
 
 import Connect from './Connect.svelte'
@@ -18,6 +27,7 @@ vi.mock('../lib/api', () => ({
   login: vi.fn(),
   me: vi.fn(),
   logout: vi.fn(),
+  resumeActiveGame: vi.fn(),
 }))
 
 function meOk(nick: string, stats: Partial<Omit<MeResponse, 'nick'>> = {}): MeResponse {
@@ -32,6 +42,7 @@ function meOk(nick: string, stats: Partial<Omit<MeResponse, 'nick'>> = {}): MeRe
 }
 
 const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 })
+const resumeNotFound = Object.assign(new Error('no active game'), { status: 404 })
 
 /** Mount me() fails (Вход), then post-login/register me() succeeds. */
 function mockAuthThenMe(result: MeResponse): void {
@@ -43,6 +54,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   vi.mocked(me).mockRejectedValue(unauthorized)
+  vi.mocked(resumeActiveGame).mockRejectedValue(resumeNotFound)
 })
 
 describe('Connect anonymous / auth gate (#19)', () => {
@@ -588,5 +600,94 @@ describe('Connect account stats (card #23)', () => {
     expect(screen.queryByTestId('account-stats')).toBeNull()
     expect(screen.queryByText('Статистика')).toBeNull()
     expect(screen.queryByText('0%')).toBeNull()
+  })
+})
+
+// Card #33 / FRONTEND_SPEC [AMENDED 2026-11-18 — card #34] — resume after login/register.
+describe('Connect resume unfinished game (card #33)', () => {
+  test('Connect_login_resumeReturnsSeat_callsOnConnect', async () => {
+    // Wrong: settle on Вошли after login when resume returns seat credentials.
+    vi.mocked(login).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-active', token: 'tok-active' })
+    const onConnect = vi.fn()
+    render(Connect, { props: { onConnect } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Ann' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    await waitFor(() =>
+      expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-active', token: 'tok-active' }),
+    )
+    expect(resumeActiveGame).toHaveBeenCalledOnce()
+    expect(loadCredentials()).toEqual({ gameId: 'g-active', token: 'tok-active' })
+    // App unmounts Connect on onConnect; this unit test only asserts the handoff.
+  })
+
+  test('Connect_register_resumeReturnsSeat_callsOnConnect', async () => {
+    // Wrong: stay on Вошли after register when an unfinished game exists.
+    vi.mocked(register).mockResolvedValue({ nick: 'Ann' })
+    mockAuthThenMe(meOk('Ann'))
+    vi.mocked(resumeActiveGame).mockResolvedValue({ gameId: 'g-active', token: 'tok-active' })
+    const onConnect = vi.fn()
+    render(Connect, { props: { onConnect } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Ann' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() =>
+      expect(onConnect).toHaveBeenCalledWith({ gameId: 'g-active', token: 'tok-active' }),
+    )
+    expect(loadCredentials()).toEqual({ gameId: 'g-active', token: 'tok-active' })
+  })
+
+  test('Connect_login_resumeNotFound_showsCreateAndLogout', async () => {
+    // Wrong: open a board / call onConnect when resume is 404.
+    vi.mocked(login).mockResolvedValue({ nick: 'Bob' })
+    mockAuthThenMe(meOk('Bob'))
+    vi.mocked(resumeActiveGame).mockRejectedValue(resumeNotFound)
+    const onConnect = vi.fn()
+    render(Connect, { props: { onConnect } })
+    await waitFor(() => expect(me).toHaveBeenCalled())
+
+    await fireEvent.input(screen.getByLabelText('Ник'), { target: { value: 'Bob' } })
+    await fireEvent.input(screen.getByLabelText('Пароль'), { target: { value: 'password1' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    await waitFor(() => expect(screen.getByText('Вы вошли как Bob')).toBeInTheDocument())
+    expect(screen.getByTestId('create-game')).toBeInTheDocument()
+    expect(screen.getByTestId('logout')).toBeInTheDocument()
+    expect(onConnect).not.toHaveBeenCalled()
+    expect(resumeActiveGame).toHaveBeenCalledOnce()
+  })
+
+  test('Connect_initialMe_doesNotCallResume', async () => {
+    // Wrong: double-call resume on cookie reopen (App owns that path).
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+
+    expect(resumeActiveGame).not.toHaveBeenCalled()
+  })
+
+  test('Connect_logout_clearsLocalCreds_only', async () => {
+    // Wrong: invent a resign / clear server seat on account logout (client only clears local).
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
+    vi.mocked(logout).mockResolvedValue(undefined)
+    saveCredentials({ gameId: 'g-active', token: 'tok-active' })
+    render(Connect, { props: { onConnect: vi.fn() } })
+    await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
+
+    await fireEvent.click(screen.getByTestId('logout'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument())
+
+    expect(loadCredentials()).toBeNull()
+    expect(logout).toHaveBeenCalledOnce()
+    // No resign / delete API on this path — only POST /api/logout + clearCredentials.
+    expect(createGame).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { createGame, joinGame, login, logout, me, register, type MeResponse } from '../lib/api'
+  import {
+    createGame,
+    joinGame,
+    login,
+    logout,
+    me,
+    register,
+    resumeActiveGame,
+    type MeResponse,
+  } from '../lib/api'
   import { clearCredentials, saveCredentials, type Credentials } from '../lib/credentials'
 
   let {
@@ -68,6 +77,20 @@
     return 'Не удалось выполнить вход'
   }
 
+  // After login/register, reclaim unfinished seat before settling on Вошли
+  // (App mount $effect does not re-fire — card #33).
+  async function tryResumeAfterAuth(): Promise<boolean> {
+    try {
+      const creds = await resumeActiveGame()
+      saveCredentials(creds)
+      onConnect(creds)
+      return true
+    } catch {
+      // 404 / network / 5xx — remain on Вошли / invite; do not clear session.
+      return false
+    }
+  }
+
   async function handleRegister(): Promise<void> {
     error = ''
     try {
@@ -86,7 +109,9 @@
       clearSession()
       // Session-read failure is not a wrong password — keep a neutral message.
       error = 'Не удалось выполнить вход'
+      return
     }
+    await tryResumeAfterAuth()
   }
 
   async function handleLogin(): Promise<void> {
@@ -107,7 +132,9 @@
       clearSession()
       // Session-read failure is not a wrong password — keep a neutral message.
       error = 'Не удалось выполнить вход'
+      return
     }
+    await tryResumeAfterAuth()
   }
 
   async function handleCreate(): Promise<void> {
