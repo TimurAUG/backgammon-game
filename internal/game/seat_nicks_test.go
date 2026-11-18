@@ -16,7 +16,7 @@ import (
 func TestManager_CreateGame_RecordsWhiteNick(t *testing.T) {
 	m := NewManager()
 
-	gameID, _, err := m.CreateGame("Alice")
+	gameID, _, err := m.CreateGame("Alice", "")
 	require.NoError(t, err)
 
 	g, ok := m.storage.LoadGame(gameID)
@@ -27,10 +27,10 @@ func TestManager_CreateGame_RecordsWhiteNick(t *testing.T) {
 
 func TestManager_JoinByID_RecordsBlackNick(t *testing.T) {
 	m := NewManager()
-	gameID, _, err := m.CreateGame("Alice")
+	gameID, _, err := m.CreateGame("Alice", "")
 	require.NoError(t, err)
 
-	_, err = m.JoinByID(gameID, "Bob")
+	_, err = m.JoinByID(gameID, "Bob", "")
 	require.NoError(t, err)
 
 	g, ok := m.storage.LoadGame(gameID)
@@ -41,7 +41,7 @@ func TestManager_JoinByID_RecordsBlackNick(t *testing.T) {
 
 func TestManager_JoinByID_ActiveGame_UpdatesLiveNicks(t *testing.T) {
 	m := NewManager()
-	gameID, whiteTok, err := m.CreateGame("Alice")
+	gameID, whiteTok, err := m.CreateGame("Alice", "")
 	require.NoError(t, err)
 
 	white := &recordingConn{}
@@ -50,7 +50,7 @@ func TestManager_JoinByID_ActiveGame_UpdatesLiveNicks(t *testing.T) {
 	require.Equal(t, "Alice", gLive.nicks[domain.White])
 	require.Empty(t, gLive.nicks[domain.Black])
 
-	_, err = m.JoinByID(gameID, "Bob")
+	_, err = m.JoinByID(gameID, "Bob", "")
 	require.NoError(t, err)
 
 	require.Equal(t, "Bob", gLive.nicks[domain.Black],
@@ -59,7 +59,7 @@ func TestManager_JoinByID_ActiveGame_UpdatesLiveNicks(t *testing.T) {
 
 func TestManager_JoinByID_ConnectedOpponent_ReceivesStateWithJoinerNick(t *testing.T) {
 	m := NewManager()
-	gameID, whiteTok, err := m.CreateGame("Alice")
+	gameID, whiteTok, err := m.CreateGame("Alice", "")
 	require.NoError(t, err)
 
 	white := &recordingConn{}
@@ -67,7 +67,7 @@ func TestManager_JoinByID_ConnectedOpponent_ReceivesStateWithJoinerNick(t *testi
 	require.NoError(t, err)
 	white.reset()
 
-	_, err = m.JoinByID(gameID, "Bob")
+	_, err = m.JoinByID(gameID, "Bob", "")
 	require.NoError(t, err)
 
 	msgs := white.Messages()

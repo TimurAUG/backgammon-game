@@ -3,8 +3,11 @@ package auth
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"time"
+
+	"github.com/TimurAUG/backgammon-game/internal/domain"
 )
 
 var (
@@ -23,6 +26,9 @@ type User struct {
 	NickLower    string
 	PasswordHash string
 	CreatedAt    time.Time
+	Played       int
+	Wins         int
+	Losses       int
 }
 
 // Session is a persisted login cookie row.
@@ -40,6 +46,19 @@ type Store interface {
 	CreateSession(ctx context.Context, userID string, expiresAt time.Time) (*Session, error)
 	GetSessionUser(ctx context.Context, sessionID string, now time.Time) (*User, error)
 	DeleteSession(ctx context.Context, sessionID string) error
+	// UserStats returns finished-game counters for the user (card #22).
+	UserStats(ctx context.Context, userID string) (played, wins, losses int, err error)
+	// ApplyFinishedGame increments counters once per seated user id (card #22).
+	ApplyFinishedGame(ctx context.Context, whiteUserID, blackUserID string, winner domain.Color) error
+}
+
+// WinPercent is nearest integer of wins/played×100; 0 when played==0.
+// Halves round away from zero (Go math.Round). Card #22 / SPEC #24.
+func WinPercent(wins, played int) int {
+	if played == 0 {
+		return 0
+	}
+	return int(math.Round(float64(wins) / float64(played) * 100))
 }
 
 // MemoryStore is an in-process Store for local/dev without DATABASE_URL.
@@ -152,6 +171,55 @@ func (s *MemoryStore) DeleteSession(_ context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+	return nil
+}
+
+func (s *MemoryStore) UserStats(_ context.Context, userID string) (played, wins, losses int, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	u, ok := s.users[userID]
+	if !ok {
+		return 0, 0, 0, ErrNotFound
+	}
+	return u.Played, u.Wins, u.Losses, nil
+}
+
+func (s *MemoryStore) ApplyFinishedGame(_ context.Context, whiteUserID, blackUserID string, winner domain.Color) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return applyFinishedGameLocked(s.users, whiteUserID, blackUserID, winner)
+}
+
+func applyFinishedGameLocked(users map[string]*User, whiteUserID, blackUserID string, winner domain.Color) error {
+	if whiteUserID == "" && blackUserID == "" {
+		return nil
+	}
+	if whiteUserID != "" && whiteUserID == blackUserID {
+		u, ok := users[whiteUserID]
+		if !ok {
+			return nil
+		}
+		u.Played++
+		u.Wins++
+		return nil
+	}
+	incSeat := func(userID string, won bool) {
+		if userID == "" {
+			return
+		}
+		u, ok := users[userID]
+		if !ok {
+			return
+		}
+		u.Played++
+		if won {
+			u.Wins++
+		} else {
+			u.Losses++
+		}
+	}
+	incSeat(whiteUserID, winner == domain.White)
+	incSeat(blackUserID, winner == domain.Black)
 	return nil
 }
 

@@ -42,7 +42,7 @@ internal/game/             — оркестратор сессий (Manager с �
 internal/protocol/         — типы WS-сообщений (зеркалятся фронтом)
 internal/transport/ws/     — WS handshake + read-loop, auth, проверка Origin
 internal/auth/             — пользователи и сессии (MemoryStore / PostgresStore, argon2id)
-internal/transport/rest/   — REST invite-флоу (POST /api/games, /api/games/{id}/join — требуют session cookie) и auth (POST /api/register, /api/login, /api/logout, GET /api/me)
+internal/transport/rest/   — REST invite-флоу (POST /api/games, /api/games/{id}/join — требуют session cookie) и auth (POST /api/register, /api/login, /api/logout, GET /api/me → {nick,played,wins,losses,win_percent})
 internal/transport/static/ — раздача SPA с Cache-Control (no-cache для index.html, immutable для ассетов)
 web/                       — SPA на Svelte 5 / TS / Vite (см. FRONTEND_SPEC.md)
 ```

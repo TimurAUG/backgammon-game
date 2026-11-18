@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/TimurAUG/backgammon-game/internal/domain"
 )
 
 // PostgresStore persists users and sessions in the same Postgres as games.
@@ -22,7 +24,7 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 
 // InitSchema creates users and sessions tables (idempotent).
 func (s *PostgresStore) InitSchema(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `
+	if _, err := s.pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS users (
 			id            TEXT PRIMARY KEY,
 			nick          TEXT NOT NULL,
@@ -38,6 +40,22 @@ func (s *PostgresStore) InitSchema(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions (user_id);
 		CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
+	`); err != nil {
+		return err
+	}
+	// Card #22 — finished-game counters on users (defaults keep old rows at zero).
+	if _, err := s.pool.Exec(ctx, `
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS played INT NOT NULL DEFAULT 0
+	`); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, `
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS wins INT NOT NULL DEFAULT 0
+	`); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS losses INT NOT NULL DEFAULT 0
 	`)
 	return err
 }
@@ -139,6 +157,60 @@ func (s *PostgresStore) GetSessionUser(ctx context.Context, sessionID string, no
 func (s *PostgresStore) DeleteSession(ctx context.Context, sessionID string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, sessionID)
 	return err
+}
+
+func (s *PostgresStore) UserStats(ctx context.Context, userID string) (played, wins, losses int, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT played, wins, losses FROM users WHERE id = $1
+	`, userID).Scan(&played, &wins, &losses)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, 0, ErrNotFound
+		}
+		return 0, 0, 0, err
+	}
+	return played, wins, losses, nil
+}
+
+func (s *PostgresStore) ApplyFinishedGame(ctx context.Context, whiteUserID, blackUserID string, winner domain.Color) error {
+	if whiteUserID == "" && blackUserID == "" {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	inc := func(userID string, won bool) error {
+		if userID == "" {
+			return nil
+		}
+		if won {
+			_, err := tx.Exec(ctx, `
+				UPDATE users SET played = played + 1, wins = wins + 1 WHERE id = $1
+			`, userID)
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			UPDATE users SET played = played + 1, losses = losses + 1 WHERE id = $1
+		`, userID)
+		return err
+	}
+
+	if whiteUserID != "" && whiteUserID == blackUserID {
+		if err := inc(whiteUserID, true); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	if err := inc(whiteUserID, winner == domain.White); err != nil {
+		return err
+	}
+	if err := inc(blackUserID, winner == domain.Black); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func isUniqueViolation(err error) bool {
