@@ -15,6 +15,9 @@ type Storage interface {
 	// SaveGame сохраняет игру. Если игра с таким id уже есть, поведение
 	// зависит от реализации (memory просто перезаписывает указатель).
 	SaveGame(g *Game) error
+
+	// DeleteGame removes the game row. Missing id is success (idempotent).
+	DeleteGame(id string) error
 }
 
 // memoryStorage — in-memory реализация Storage поверх map. По умолчанию
@@ -40,5 +43,12 @@ func (s *memoryStorage) SaveGame(g *Game) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.games[g.ID] = g
+	return nil
+}
+
+func (s *memoryStorage) DeleteGame(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.games, id)
 	return nil
 }

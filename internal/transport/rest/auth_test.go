@@ -369,6 +369,10 @@ func (s *saveCountingStorage) SaveGame(g *game.Game) error {
 	return s.inner.SaveGame(g)
 }
 
+func (s *saveCountingStorage) DeleteGame(id string) error {
+	return s.inner.DeleteGame(id)
+}
+
 func (s *saveCountingStorage) SaveCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

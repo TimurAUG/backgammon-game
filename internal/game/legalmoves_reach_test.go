@@ -23,6 +23,7 @@ func TestLegalMovesMessageFor_IncludesReachChains(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "", white)
 	require.NoError(t, err)
 	_, g, err := mgr.JoinGame("g1", "", black)

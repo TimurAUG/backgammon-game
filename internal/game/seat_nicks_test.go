@@ -253,6 +253,13 @@ func (s *copyingMemoryStorage) LoadGame(id string) (*Game, bool) {
 	}, true
 }
 
+func (s *copyingMemoryStorage) DeleteGame(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.games, id)
+	return nil
+}
+
 // recordingConn is a Conn that records outbound ServerMessages.
 type recordingConn struct {
 	msgs []protocol.ServerMessage

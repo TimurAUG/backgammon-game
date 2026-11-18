@@ -51,6 +51,13 @@ var ErrInvalidState = errors.New("invalid state")
 // (вход по приглашению в несуществующую/устаревшую игру).
 var ErrGameNotFound = errors.New("game not found")
 
+// ErrNotCreator is returned when CancelGame is called by a session that is
+// not the creating (white) seat's stored user id (card #29 / SPEC #31).
+var ErrNotCreator = errors.New("forbidden")
+
+// ErrGameFinished is returned when CancelGame targets an already finished game.
+var ErrGameFinished = errors.New("game finished")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -83,13 +90,18 @@ type Game struct {
 
 	// stats — optional; set from Manager when creating/loading (card #22).
 	stats StatsRecorder
+
+	// cancelled — set by Manager.CancelGame. Live WS seats may still hold this
+	// *Game; mutate paths must refuse and must not SaveGame / record stats
+	// (card #29 / Code Review).
+	cancelled bool
 }
 
 // maybePersist сохраняет текущее состояние в Storage, если он задан.
 // Обычно вызывается через defer после g.mu.Unlock() (LIFO порядок defer'ов
 // гарантирует, что Unlock сработает раньше).
 func (g *Game) maybePersist() {
-	if g.storage == nil {
+	if g.cancelled || g.storage == nil {
 		return
 	}
 	_ = g.storage.SaveGame(g)
@@ -205,6 +217,9 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -307,6 +322,9 @@ func (g *Game) Roll(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -342,6 +360,9 @@ func (g *Game) EndTurn(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -386,6 +407,9 @@ func (g *Game) Resign(c domain.Color) {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return
+	}
 	if g.State.Status == domain.StatusFinished {
 		return
 	}
@@ -404,7 +428,7 @@ func (g *Game) Resign(c domain.Color) {
 // recordFinishedStatsLocked applies seat user counters once per finished game.
 // Must be called with g.mu held. Card #22.
 func (g *Game) recordFinishedStatsLocked(winner domain.Color) {
-	if g.statsRecorded {
+	if g.cancelled || g.statsRecorded {
 		return
 	}
 	whiteUID := g.userIDs[domain.White]
@@ -441,6 +465,9 @@ func (g *Game) RollForFirst(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.rolledForFirst[c] {
 		return nil
 	}
@@ -837,7 +864,8 @@ func (m *Manager) JoinByID(gameID, nick, userID string) (string, error) {
 // JoinGame регистрирует соединение conn в игре с id.
 //
 // Логика:
-//   - Если игры с id ещё нет — создаётся с начальной доской и Turn=White.
+//   - Если игры с id нет ни в active, ни в Storage — ErrGameNotFound
+//     (card #29 / SPEC §2 card #31: cancel must not be undone by WS JOIN).
 //   - Реконнект: если token != "" и совпадает с сохранённым в одном из
 //     слотов — соединение заменяется на conn в том же слоте, возвращается
 //     прежний цвет.
@@ -850,26 +878,17 @@ func (m *Manager) JoinByID(gameID, nick, userID string) (string, error) {
 // одного клиента от другого).
 func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, error) {
 	// Берём live-объект из реестра, если партия уже активна (общие conns).
-	// Иначе поднимаем из Storage (восстановление после рестарта) или создаём
-	// новую и регистрируем. Создание/поиск — под m.mu, чтобы два одновременных
-	// JOIN новой игры не создали два объекта.
+	// Иначе поднимаем из Storage. Поиск — под m.mu, чтобы два одновременных
+	// JOIN не зарегистрировали два объекта.
 	m.mu.Lock()
 	g, ok := m.active[id]
 	if !ok {
 		loaded, found := m.storage.LoadGame(id)
-		if found {
-			g = loaded
-		} else {
-			g = &Game{
-				ID: id,
-				State: domain.GameState{
-					Board:       domain.InitialBoard(),
-					Turn:        domain.White,
-					Status:      domain.StatusWaitingForRoll,
-					IsFirstMove: [2]bool{true, true},
-				},
-			}
+		if !found {
+			m.mu.Unlock()
+			return 0, nil, ErrGameNotFound
 		}
+		g = loaded
 		g.rng = m.rng
 		g.storage = m.storage
 		g.stats = m.stats
@@ -886,6 +905,85 @@ func (m *Manager) JoinGame(id, token string, conn Conn) (domain.Color, *Game, er
 
 	_ = m.storage.SaveGame(g)
 	return color, g, nil
+}
+
+// SeedUnfinishedGame persists a blank unfinished game under id so JoinGame
+// can attach. Idempotent when the id already exists in Storage. Tests that
+// previously relied on JoinGame auto-create must call this (or CreateGame).
+func (m *Manager) SeedUnfinishedGame(id string) error {
+	if _, ok := m.storage.LoadGame(id); ok {
+		return nil
+	}
+	g := &Game{
+		ID: id,
+		State: domain.GameState{
+			Board:       domain.InitialBoard(),
+			Turn:        domain.White,
+			Status:      domain.StatusWaitingForRoll,
+			IsFirstMove: [2]bool{true, true},
+		},
+	}
+	g.rng = m.rng
+	g.storage = m.storage
+	g.stats = m.stats
+	return m.storage.SaveGame(g)
+}
+
+// CancelGame deletes an unfinished game for the creating (white) user's
+// session. Live seats receive ERROR GAME_NOT_FOUND; no GAME_OVER / stats.
+// Card #29 / SPEC.md §2 [NEW 2026-11-18 — card #31].
+func (m *Manager) CancelGame(gameID, userID string) error {
+	m.mu.Lock()
+
+	g, inActive := m.active[gameID]
+	if !inActive {
+		var ok bool
+		g, ok = m.storage.LoadGame(gameID)
+		if !ok {
+			m.mu.Unlock()
+			return ErrGameNotFound
+		}
+		g.rng = m.rng
+		g.storage = m.storage
+		g.stats = m.stats
+	}
+
+	g.mu.Lock()
+	if g.State.Status == domain.StatusFinished {
+		g.mu.Unlock()
+		m.mu.Unlock()
+		return ErrGameFinished
+	}
+	whiteUID := g.userIDs[domain.White]
+	if whiteUID == "" || whiteUID != userID {
+		g.mu.Unlock()
+		m.mu.Unlock()
+		return ErrNotCreator
+	}
+	conns := [2]Conn{g.conns[domain.White], g.conns[domain.Black]}
+	g.conns[domain.White] = nil
+	g.conns[domain.Black] = nil
+	// Detach live *Game from persistence/stats so a seat that keeps the
+	// pointer cannot SaveGame-resurrect or record finished stats (card #29).
+	g.cancelled = true
+	g.storage = nil
+	g.stats = nil
+	g.mu.Unlock()
+
+	delete(m.active, gameID)
+	err := m.storage.DeleteGame(gameID)
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	msg := protocol.ServerMessage{Type: "ERROR", Code: "GAME_NOT_FOUND", Message: "game not found"}
+	for _, c := range conns {
+		if c != nil {
+			_ = c.Send(msg)
+		}
+	}
+	return nil
 }
 
 // Leave отсоединяет игрока цвета color от партии id и, если отключились оба,
