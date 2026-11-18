@@ -117,7 +117,13 @@ describe('api auth (#4)', () => {
   test('me_getWithCredentialsInclude', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ nick: 'Carla' }),
+      json: async () => ({
+        nick: 'Carla',
+        played: 0,
+        wins: 0,
+        losses: 0,
+        win_percent: 0,
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -127,7 +133,86 @@ describe('api auth (#4)', () => {
       method: 'GET',
       credentials: 'include',
     })
-    expect(result).toEqual({ nick: 'Carla' })
+    expect(result).toEqual({
+      nick: 'Carla',
+      played: 0,
+      wins: 0,
+      losses: 0,
+      win_percent: 0,
+    })
+  })
+
+  // Card #23 — GET /api/me returns nick + four stats ints (SPEC #24).
+  test('me_parsesPlayedWinsLossesWinPercent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        nick: 'Carla',
+        played: 42,
+        wins: 27,
+        losses: 15,
+        win_percent: 64,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await me()
+
+    expect(result).toEqual({
+      nick: 'Carla',
+      played: 42,
+      wins: 27,
+      losses: 15,
+      win_percent: 64,
+    })
+  })
+
+  test('me_missingWinPercent_throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ nick: 'Carla', played: 1, wins: 1, losses: 0 }),
+      }),
+    )
+
+    await expect(me()).rejects.toThrow(/unexpected response shape/)
+  })
+
+  test('me_nonIntegerPlayed_throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          nick: 'Carla',
+          played: 1.5,
+          wins: 1,
+          losses: 0,
+          win_percent: 100,
+        }),
+      }),
+    )
+
+    await expect(me()).rejects.toThrow(/unexpected response shape/)
+  })
+
+  test('me_negativePlayed_throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          nick: 'Carla',
+          played: -1,
+          wins: 0,
+          losses: 0,
+          win_percent: 0,
+        }),
+      }),
+    )
+
+    await expect(me()).rejects.toThrow(/unexpected response shape/)
   })
 
   test('logout_postsWithCredentialsInclude', async () => {

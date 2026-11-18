@@ -6,7 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { flushSync } from 'svelte'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { createGame, logout, me } from './lib/api'
+import { createGame, logout, me, type MeResponse } from './lib/api'
 import { loadCredentials, saveCredentials, type Credentials } from './lib/credentials'
 import { resetConnectionState } from './stores/connection.svelte'
 import { resetGameState } from './stores/game.svelte'
@@ -50,9 +50,13 @@ function testCreateClient(creds: Credentials): WSClient {
   )
 }
 
+function meOk(nick: string): MeResponse {
+  return { nick, played: 0, wins: 0, losses: 0, win_percent: 0 }
+}
+
 /** Card #19: board only after me succeeds + saved/URL seat creds. */
 function enterWithSavedCreds(gameId = 'g-1', token = 'tok', nick = 'Ann'): void {
-  vi.mocked(me).mockResolvedValue({ nick })
+  vi.mocked(me).mockResolvedValue(meOk(nick))
   saveCredentials({ gameId, token })
   render(App, { props: { createClient: testCreateClient } })
 }
@@ -77,6 +81,15 @@ describe('App routing (#24b / #19)', () => {
     expect(screen.queryByTestId('create-game')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull()
   })
+
+  // Card #23 AC5 — stats block lives only on Вошли, not on the board.
+  test('App_boardShown_accountStatsAbsent', async () => {
+    enterWithSavedCreds('g-1', 'tok')
+    await waitForBoard()
+
+    expect(screen.queryByTestId('account-stats')).toBeNull()
+    expect(screen.queryByText('Статистика')).toBeNull()
+  })
 })
 
 describe('App auth gate (#19)', () => {
@@ -99,9 +112,9 @@ describe('App auth gate (#19)', () => {
   })
 
   test('App_mePending_doesNotStartSessionFromSaved', () => {
-    let resolveMe!: (value: { nick: string }) => void
+    let resolveMe!: (value: MeResponse) => void
     vi.mocked(me).mockReturnValue(
-      new Promise<{ nick: string }>((resolve) => {
+      new Promise<MeResponse>((resolve) => {
         resolveMe = resolve
       }),
     )
@@ -114,7 +127,7 @@ describe('App auth gate (#19)', () => {
     expect(screen.getByRole('heading', { name: 'Длинные нарды' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull()
 
-    resolveMe({ nick: 'Ann' })
+    resolveMe(meOk('Ann'))
   })
 })
 
@@ -153,7 +166,7 @@ describe('App WSClient wiring (#24b)', () => {
 
 describe('App game over exit (#19)', () => {
   async function reachGameOverWithQuery(gameId = 'g-old', token = 'tok-old'): Promise<MockWebSocket> {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     saveCredentials({ gameId, token })
     window.history.replaceState(null, '', `/?game=${gameId}`)
     render(App, { props: { createClient: testCreateClient } })
@@ -170,7 +183,7 @@ describe('App game over exit (#19)', () => {
   test('App_gameOverExit_endsSeatReturnsVoshliSameNick_noCreateNoLogout', async () => {
     // After seat exit: Connect remounts; me still 200 → Вошли (create + account logout).
     // Keep me resolving to Ann for the remounted Connect.
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     await reachGameOverWithQuery('g-old', 'tok-old')
 
     await fireEvent.click(screen.getByTestId('action-exit'))
@@ -185,7 +198,7 @@ describe('App game over exit (#19)', () => {
   })
 
   test('App_gameOverExit_clearsGameQuery', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     await reachGameOverWithQuery('g-old', 'tok-old')
 
     await fireEvent.click(screen.getByTestId('action-exit'))
@@ -198,7 +211,7 @@ describe('App game over exit (#19)', () => {
 
 describe('App logout (card #13 / #19)', () => {
   test('App_connectLogoutSuccess_clearsAndShowsVhod', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     window.history.replaceState(null, '', '/')
     render(App, { props: { createClient: testCreateClient } })
     await waitFor(() => expect(screen.getByText('Вы вошли как Ann')).toBeInTheDocument())
@@ -224,7 +237,7 @@ describe('App invite link (#30 / #19)', () => {
   })
 
   test('App_gameParamInUrl_loggedIn_showsJoinInvite', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     window.history.replaceState(null, '', '/?game=g-xyz')
 
     render(App, { props: { createClient: testCreateClient } })
@@ -234,7 +247,7 @@ describe('App invite link (#30 / #19)', () => {
   })
 
   test('App_noGameParam_loggedIn_showsCreateInConnect', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     render(App, { props: { createClient: testCreateClient } })
 
     await waitFor(() => expect(screen.getByTestId('create-game')).toBeInTheDocument())
@@ -265,7 +278,7 @@ describe('App auto-connect (#24c / #19)', () => {
 
 describe('App reconnect link (#30 / #19)', () => {
   test('App_gameAndTokenInUrl_autoReconnects', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
     render(App, { props: { createClient: testCreateClient } })
@@ -278,7 +291,7 @@ describe('App reconnect link (#30 / #19)', () => {
   })
 
   test('App_gameAndTokenInUrl_savesCredsAndStripsToken', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
     render(App, { props: { createClient: testCreateClient } })
@@ -289,7 +302,7 @@ describe('App reconnect link (#30 / #19)', () => {
   })
 
   test('App_urlToken_overridesSavedCreds', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     saveCredentials({ gameId: 'g-old', token: 'tok-old' })
     window.history.replaceState(null, '', '/?game=g-url&token=tok-url')
 
@@ -305,7 +318,7 @@ describe('App reconnect link (#30 / #19)', () => {
 
 describe('App public invite vs saved creds (fix / #19)', () => {
   test('App_publicInvite_staleCredsForOtherGame_showsJoinInviteAndDoesNotConnect', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     saveCredentials({ gameId: 'g-other', token: 'tok-other' })
     window.history.replaceState(null, '', '/?game=g-new')
 
@@ -316,7 +329,7 @@ describe('App public invite vs saved creds (fix / #19)', () => {
   })
 
   test('App_publicInvite_ownSavedGame_autoReconnects', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     saveCredentials({ gameId: 'g-1', token: 'tok-1' })
     window.history.replaceState(null, '', '/?game=g-1')
 
@@ -377,7 +390,7 @@ describe('App opponent-joined notification (#34a)', () => {
   })
 
   test('App_gameOverExit_clearsNotifications', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     enterWithSavedCreds('g-1', 'tok')
     await waitForBoard()
     const ws = MockWebSocket.last()
@@ -480,7 +493,7 @@ describe('App chat (#40)', () => {
   })
 
   test('App_gameOverExit_clearsChat', async () => {
-    vi.mocked(me).mockResolvedValue({ nick: 'Ann' })
+    vi.mocked(me).mockResolvedValue(meOk('Ann'))
     const ws = await connectedSocket('white')
     ws.receive({ type: 'CHAT', sender: 'black', text: 'до встречи' })
     ws.receive({ type: 'GAME_OVER', winner: 'white', kind: 'mars' })
