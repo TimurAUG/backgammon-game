@@ -51,6 +51,14 @@ var ErrInvalidState = errors.New("invalid state")
 // (вход по приглашению в несуществующую/устаревшую игру).
 var ErrGameNotFound = errors.New("game not found")
 
+// ErrActiveGameExists is returned when create/join would seat a user who
+// already has a different unfinished game. Card #32 / SPEC §2 card #34.
+var ErrActiveGameExists = errors.New("active game exists")
+
+// ErrNoActiveGame is returned by ActiveCredentials when the user has no
+// unfinished seated game. Card #32 / SPEC §2 card #34.
+var ErrNoActiveGame = errors.New("no active game")
+
 // Game — одна партия в памяти.
 //
 // Содержит идентификатор, доменное состояние, источник случайности для
@@ -743,7 +751,20 @@ func (m *Manager) SetStatsRecorder(stats StatsRecorder) {
 // (16 байт) через ids, начальную доску, creator-токен, nick и userID в слоте
 // White (Black свободен — туда войдёт второй игрок через JoinByID). Сохраняет и
 // возвращает gameID и token для передачи клиенту.
+//
+// Card #32: refuses when userID already has an unfinished seated game.
 func (m *Manager) CreateGame(nick, userID string) (string, string, error) {
+	// Serialize with JoinByID / concurrent CreateGame so two sessions of the
+	// same user cannot both mint a seat (≤1 unfinished game per user).
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if userID != "" {
+		if _, ok := m.storage.FindActiveGameByUserID(userID); ok {
+			return "", "", ErrActiveGameExists
+		}
+	}
+
 	gameID, err := generateID(m.ids, 8)
 	if err != nil {
 		return "", "", err
@@ -773,6 +794,37 @@ func (m *Manager) CreateGame(nick, userID string) (string, string, error) {
 	return gameID, token, nil
 }
 
+// ActiveCredentials returns the existing stored seat credentials for the
+// caller's sole unfinished game. Never mints a new token. Card #32.
+func (m *Manager) ActiveCredentials(userID string) (gameID, token string, err error) {
+	if userID == "" {
+		return "", "", ErrNoActiveGame
+	}
+	g, ok := m.storage.FindActiveGameByUserID(userID)
+	if !ok {
+		return "", "", ErrNoActiveGame
+	}
+	m.mu.Lock()
+	if live, inActive := m.active[g.ID]; inActive {
+		g = live
+	}
+	m.mu.Unlock()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.State.Status == domain.StatusFinished {
+		return "", "", ErrNoActiveGame
+	}
+	switch {
+	case g.userIDs[domain.White] == userID:
+		return g.ID, g.tokens[domain.White], nil
+	case g.userIDs[domain.Black] == userID:
+		return g.ID, g.tokens[domain.Black], nil
+	default:
+		return "", "", ErrNoActiveGame
+	}
+}
+
 // JoinByID резервирует свободный слот в существующей игре под нового игрока:
 // генерит token (16 байт), кладёт в первый пустой слот tokens и записывает
 // nick + userID, сохраняет. Предпочитает live-объект из active (если создатель уже
@@ -782,12 +834,10 @@ func (m *Manager) CreateGame(nick, userID string) (string, string, error) {
 // видит пустой black nick, пока Postgres уже хранит joiner). При
 // подключённом сопернике шлёт свежий STATE с обновлёнными nicks.
 // ErrGameNotFound / ErrRoomFull как раньше.
+//
+// Card #32: same unfinished game → existing seat token (do not take other
+// color); a different unfinished game → ErrActiveGameExists.
 func (m *Manager) JoinByID(gameID, nick, userID string) (string, error) {
-	token, err := generateID(m.ids, 16)
-	if err != nil {
-		return "", err
-	}
-
 	// Serialize with JoinGame's registry section so REST join and WS share
 	// one *Game when Storage returns a fresh copy on every LoadGame.
 	m.mu.Lock()
@@ -802,6 +852,32 @@ func (m *Manager) JoinByID(gameID, nick, userID string) (string, error) {
 		g.rng = m.rng
 		g.storage = m.storage
 		g.stats = m.stats
+	}
+
+	g.mu.Lock()
+	if userID != "" {
+		for c := 0; c < 2; c++ {
+			if g.userIDs[c] == userID {
+				existing := g.tokens[c]
+				g.mu.Unlock()
+				m.mu.Unlock()
+				return existing, nil
+			}
+		}
+	}
+	g.mu.Unlock()
+
+	if userID != "" {
+		if ag, ok := m.storage.FindActiveGameByUserID(userID); ok && ag.ID != gameID {
+			m.mu.Unlock()
+			return "", ErrActiveGameExists
+		}
+	}
+
+	token, err := generateID(m.ids, 16)
+	if err != nil {
+		m.mu.Unlock()
+		return "", err
 	}
 
 	g.mu.Lock()

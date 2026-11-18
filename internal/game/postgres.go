@@ -197,3 +197,67 @@ func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 		chat:           chat,
 	}, true
 }
+
+// FindActiveGameByUserID selects rows where the user sits on a seat, then
+// filters StatusFinished in Go (status lives inside state JSONB). Empty
+// userID never matches. Deterministic: lowest id among unfinished matches.
+// Card #32 / SPEC §2 card #34.
+func (s *PostgresStorage) FindActiveGameByUserID(userID string) (*Game, bool) {
+	if userID == "" {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, state, token_white, token_black,
+		       rolled_for_first_white, rolled_for_first_black, chat,
+		       nick_white, nick_black, user_white, user_black, stats_recorded,
+		       first_roll_white, first_roll_black
+		FROM games
+		WHERE user_white = $1 OR user_black = $1
+		ORDER BY id
+	`, userID)
+	if err != nil {
+		return nil, false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		var stateJSON, chatJSON []byte
+		var tokenW, tokenB string
+		var nickW, nickB string
+		var userW, userB string
+		var statsRecorded bool
+		var rfrW, rfrB bool
+		var frW, frB int16
+		if err := rows.Scan(&id, &stateJSON, &tokenW, &tokenB, &rfrW, &rfrB, &chatJSON,
+			&nickW, &nickB, &userW, &userB, &statsRecorded, &frW, &frB); err != nil {
+			return nil, false
+		}
+		var state domain.GameState
+		if err := json.Unmarshal(stateJSON, &state); err != nil {
+			continue
+		}
+		if state.Status == domain.StatusFinished {
+			continue
+		}
+		var chat []ChatMessage
+		if len(chatJSON) > 0 {
+			_ = json.Unmarshal(chatJSON, &chat)
+		}
+		return &Game{
+			ID:             id,
+			State:          state,
+			tokens:         [2]string{tokenW, tokenB},
+			nicks:          [2]string{nickW, nickB},
+			userIDs:        [2]string{userW, userB},
+			statsRecorded:  statsRecorded,
+			rolledForFirst: [2]bool{rfrW, rfrB},
+			firstRoll:      [2]uint8{uint8(frW), uint8(frB)},
+			chat:           chat,
+		}, true
+	}
+	return nil, false
+}

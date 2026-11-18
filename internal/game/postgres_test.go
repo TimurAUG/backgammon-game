@@ -231,3 +231,39 @@ func TestPostgresStorage_PersistsFirstRollValues(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, [2]uint8{5, 3}, loaded.FirstRollValues())
 }
+
+// Card #32 AC8 — FindActive survives process restart (storage-only unfinished game).
+func TestPostgresStorage_FindActiveGameByUserID(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	mgr := game.NewManagerWithStorage(storage, nil)
+	gameID, whiteTok, err := mgr.CreateGame("Alice", "uid-w")
+	require.NoError(t, err)
+	_, err = mgr.JoinByID(gameID, "Bob", "uid-b")
+	require.NoError(t, err)
+
+	// New Manager = process restart: no in-memory registry, only Postgres rows.
+	restarted := game.NewManagerWithStorage(storage, nil)
+	gotID, gotTok, err := restarted.ActiveCredentials("uid-w")
+	require.NoError(t, err)
+	require.Equal(t, gameID, gotID)
+	require.Equal(t, whiteTok, gotTok)
+
+	g, ok := storage.FindActiveGameByUserID("uid-w")
+	require.True(t, ok)
+	require.Equal(t, gameID, g.ID)
+
+	_, ok = storage.FindActiveGameByUserID("")
+	require.False(t, ok)
+
+	// Finished is not active.
+	_, live, err := restarted.JoinGame(gameID, whiteTok, &mockConn{})
+	require.NoError(t, err)
+	live.Resign(domain.White)
+	_, ok = storage.FindActiveGameByUserID("uid-w")
+	require.False(t, ok)
+	_, _, err = restarted.ActiveCredentials("uid-w")
+	require.ErrorIs(t, err, game.ErrNoActiveGame)
+}

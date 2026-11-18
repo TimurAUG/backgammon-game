@@ -45,6 +45,7 @@ func NewHandler(mgr *game.Manager, authStore auth.Store) *Handler {
 // проде (main.go), и в тестах — единый источник правды по путям.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/games", h.handleCreate)
+	mux.HandleFunc("GET /api/games/active", h.handleActiveGame)
 	mux.HandleFunc("POST /api/games/{id}/join", h.handleJoin)
 	mux.HandleFunc("POST /api/register", h.handleRegister)
 	mux.HandleFunc("POST /api/login", h.handleLogin)
@@ -75,7 +76,31 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	gameID, token, err := h.mgr.CreateGame(nick, userID)
 	if err != nil {
+		if errors.Is(err, game.ErrActiveGameExists) {
+			http.Error(w, "conflict", http.StatusConflict)
+			return
+		}
 		http.Error(w, "create failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, credentialsResponse{GameID: gameID, Token: token})
+}
+
+// handleActiveGame — GET /api/games/active: reclaim the caller's sole
+// unfinished seat credentials (existing token). Card #32.
+func (h *Handler) handleActiveGame(w http.ResponseWriter, r *http.Request) {
+	_, userID, ok := h.UserFromRequest(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	gameID, token, err := h.mgr.ActiveCredentials(userID)
+	if err != nil {
+		if errors.Is(err, game.ErrNoActiveGame) {
+			http.Error(w, "no active game", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "active game failed", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, credentialsResponse{GameID: gameID, Token: token})
@@ -93,6 +118,8 @@ func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, game.ErrGameNotFound):
 			http.Error(w, "game not found", http.StatusNotFound)
+		case errors.Is(err, game.ErrActiveGameExists):
+			http.Error(w, "conflict", http.StatusConflict)
 		case errors.Is(err, game.ErrRoomFull):
 			http.Error(w, "room full", http.StatusConflict)
 		default:
