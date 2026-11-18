@@ -203,6 +203,7 @@ type gameSnapshot struct {
 	state          domain.GameState
 	tokens         [2]string
 	nicks          [2]string
+	userIDs        [2]string
 	rolledForFirst [2]bool
 	firstRoll      [2]uint8
 	chat           []ChatMessage
@@ -221,6 +222,7 @@ func (s *copyingMemoryStorage) snapshotLocked(g *Game) gameSnapshot {
 		state:          g.State,
 		tokens:         g.tokens,
 		nicks:          g.nicks,
+		userIDs:        g.userIDs,
 		rolledForFirst: g.rolledForFirst,
 		firstRoll:      g.firstRoll, // read under g.mu — do not call FirstRollValues (would re-lock)
 		chat:           chat,
@@ -247,8 +249,45 @@ func (s *copyingMemoryStorage) LoadGame(id string) (*Game, bool) {
 		State:          snap.state,
 		tokens:         snap.tokens,
 		nicks:          snap.nicks,
+		userIDs:        snap.userIDs,
 		rolledForFirst: snap.rolledForFirst,
 		firstRoll:      snap.firstRoll,
+		chat:           chat,
+	}, true
+}
+
+func (s *copyingMemoryStorage) FindActiveGameByUserID(userID string) (*Game, bool) {
+	if userID == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var foundID string
+	var foundSnap gameSnapshot
+	for id, snap := range s.games {
+		if snap.state.Status == domain.StatusFinished {
+			continue
+		}
+		if snap.userIDs[domain.White] != userID && snap.userIDs[domain.Black] != userID {
+			continue
+		}
+		if foundID == "" || id < foundID {
+			foundID = id
+			foundSnap = snap
+		}
+	}
+	if foundID == "" {
+		return nil, false
+	}
+	chat := append([]ChatMessage(nil), foundSnap.chat...)
+	return &Game{
+		ID:             foundSnap.id,
+		State:          foundSnap.state,
+		tokens:         foundSnap.tokens,
+		nicks:          foundSnap.nicks,
+		userIDs:        foundSnap.userIDs,
+		rolledForFirst: foundSnap.rolledForFirst,
+		firstRoll:      foundSnap.firstRoll,
 		chat:           chat,
 	}, true
 }
