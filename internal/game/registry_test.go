@@ -67,6 +67,7 @@ func TestManager_Postgres_BroadcastReachesBothPlayers(t *testing.T) {
 
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, gw, err := mgr.JoinGame("g1", "tok-w", white)
 	require.NoError(t, err)
 	_, gb, err := mgr.JoinGame("g1", "tok-b", black)
@@ -93,6 +94,7 @@ func TestManager_Leave_UnloadsGameWhenBothDisconnected(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	connW := &mockConn{}
 	connB := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	cw, _, err := mgr.JoinGame("g1", "tok-w", connW)
 	require.NoError(t, err)
 	cb, _, err := mgr.JoinGame("g1", "tok-b", connB)
@@ -116,6 +118,7 @@ func TestManager_RejoinAfterUnload_RestoresSlotFromStorage(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	connW := &mockConn{}
 	connB := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	cw, _, err := mgr.JoinGame("g1", "tok-w", connW)
 	require.NoError(t, err)
 	cb, _, err := mgr.JoinGame("g1", "tok-b", connB)
@@ -137,6 +140,7 @@ func TestManager_Reconnect_StaleDetachKeepsFreshConn(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	blackOld := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "tok-w", white)
 	require.NoError(t, err)
 	cb, _, err := mgr.JoinGame("g1", "tok-b", blackOld)

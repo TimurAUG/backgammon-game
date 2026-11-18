@@ -147,6 +147,14 @@ func (s *PostgresStorage) SaveGame(g *Game) error {
 // LoadGame читает игру по id. При отсутствии (pgx.ErrNoRows) возвращает
 // (nil, false). conns/rng/mu — нулевые; вызывающий обязан установить rng
 // перед использованием.
+// DeleteGame removes the games row. Missing id is success.
+func (s *PostgresStorage) DeleteGame(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := s.pool.Exec(ctx, `DELETE FROM games WHERE id = $1`, id)
+	return err
+}
+
 func (s *PostgresStorage) LoadGame(id string) (*Game, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

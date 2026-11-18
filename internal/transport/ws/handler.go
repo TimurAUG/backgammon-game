@@ -86,8 +86,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	color, g, err := h.mgr.JoinGame(msg.GameID, token, pc)
 	if err != nil {
 		code := "INVALID_STATE"
-		if errors.Is(err, game.ErrRoomFull) {
+		switch {
+		case errors.Is(err, game.ErrRoomFull):
 			code = "ROOM_FULL"
+		case errors.Is(err, game.ErrGameNotFound):
+			code = "GAME_NOT_FOUND"
 		}
 		_ = pc.Send(protocol.ServerMessage{Type: "ERROR", Code: code, Message: err.Error()})
 		return

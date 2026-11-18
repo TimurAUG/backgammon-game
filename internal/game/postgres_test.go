@@ -67,6 +67,7 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 	// приватным tokens/rolledForFirst идёт через метод-геттеры; для setup
 	// используем JoinGame + прямую правку публичных полей.
 	mgr := game.NewManagerWithStorage(storage, nil)
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	white := &mockConn{}
 	black := &mockConn{}
 	_, _, err := mgr.JoinGame("g1", "tok-w", white)
@@ -105,9 +106,10 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 	_, missing := storage.LoadGame("nope")
 	require.False(t, missing, "несуществующая игра — ok=false")
 
-	// auto-save: новая партия после JoinGame должна попадать в БД без явного
-	// SaveGame от вызывающего.
+	// auto-save after seed: JoinGame persists seat token without an extra
+	// SaveGame from the caller (card #29: JoinGame no longer creates missing ids).
 	autoMgr := game.NewManagerWithStorage(storage, nil)
+	require.NoError(t, autoMgr.SeedUnfinishedGame("g-auto"))
 	autoConn := &mockConn{}
 	_, _, err = autoMgr.JoinGame("g-auto", "auto-tok", autoConn)
 	require.NoError(t, err)
@@ -117,6 +119,23 @@ func TestPostgresStorage_SaveAndLoad(t *testing.T) {
 	require.Equal(t, [2]string{"auto-tok", ""}, autoLoaded.Tokens())
 	require.Equal(t, int8(15), autoLoaded.State.Board[23],
 		"начальная доска: 15 белых на пункте 24")
+}
+
+// Card #29 — Postgres DeleteGame removes the row.
+func TestPostgresStorage_DeleteGame_RemovesRow(t *testing.T) {
+	pool := startPostgres(t)
+	storage := game.NewPostgresStorage(pool)
+	require.NoError(t, storage.InitSchema(context.Background()))
+
+	mgr := game.NewManagerWithStorage(storage, nil)
+	gameID, _, err := mgr.CreateGame("Alice", "user-w")
+	require.NoError(t, err)
+	_, ok := storage.LoadGame(gameID)
+	require.True(t, ok)
+
+	require.NoError(t, mgr.CancelGame(gameID, "user-w"))
+	_, ok = storage.LoadGame(gameID)
+	require.False(t, ok, "CancelGame must DeleteGame the Postgres row")
 }
 
 // TestPostgresStorage_PersistsChatHistory — история чата переживает round-trip
@@ -131,6 +150,7 @@ func TestPostgresStorage_PersistsChatHistory(t *testing.T) {
 	require.NoError(t, storage.InitSchema(context.Background()))
 
 	mgr := game.NewManagerWithStorage(storage, nil)
+	require.NoError(t, mgr.SeedUnfinishedGame("g-chat"))
 	_, _, err := mgr.JoinGame("g-chat", "tok-w", &mockConn{})
 	require.NoError(t, err)
 	_, original, err := mgr.JoinGame("g-chat", "tok-b", &mockConn{})

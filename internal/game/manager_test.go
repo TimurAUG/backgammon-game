@@ -44,6 +44,7 @@ func TestGame_EndTurn_RejectsSixBlockViolation(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "", white)
 	require.NoError(t, err)
 	_, g, err := mgr.JoinGame("g1", "", black)
@@ -76,6 +77,7 @@ func TestGame_HandleMove_TriggersGameOverMars(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "", white)
 	require.NoError(t, err)
 	_, g, err := mgr.JoinGame("g1", "", black)
@@ -131,6 +133,7 @@ func TestGame_Roll_NoLegalMoves_BroadcastsTurnSkipped(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 1}))
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "tok-w", white)
 	require.NoError(t, err)
 	_, g, err := mgr.JoinGame("g1", "tok-b", black)
@@ -171,6 +174,7 @@ func TestGame_Roll_FirstMoveDoubleSix_NotSkipped(t *testing.T) {
 	mgr := game.NewManagerWithRand(bytes.NewReader([]byte{5, 5}))
 	white := &mockConn{}
 	black := &mockConn{}
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	_, _, err := mgr.JoinGame("g1", "tok-w", white)
 	require.NoError(t, err)
 	_, g, err := mgr.JoinGame("g1", "tok-b", black)
@@ -211,6 +215,7 @@ func TestGame_Resign_OpponentWinsKoks(t *testing.T) {
 			mgr := game.NewManagerWithRand(bytes.NewReader([]byte{0, 0}))
 			white := &mockConn{}
 			black := &mockConn{}
+			require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 			_, _, err := mgr.JoinGame("g1", "tok-w", white)
 			require.NoError(t, err)
 			_, g, err := mgr.JoinGame("g1", "tok-b", black)

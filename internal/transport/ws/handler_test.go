@@ -77,7 +77,7 @@ func TestHandler_JoinReturnsState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	conn := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
+	conn := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "t1")
 	defer conn.Close(websocket.StatusInternalError, "test cleanup")
 
 	msg := readMessage(t, ctx, conn)
@@ -101,7 +101,7 @@ func TestHandler_Join_NoSessionCookie_Accepted(t *testing.T) {
 	defer cancel()
 
 	// Explicit: no Cookie header — only Bearer seat token.
-	conn := dialAndJoinWithToken(t, ctx, wsURL, "g-nosession", "t-nosession")
+	conn := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g-nosession", "t-nosession")
 	defer conn.Close(websocket.StatusInternalError, "test cleanup")
 
 	msg := readMessage(t, ctx, conn)
@@ -123,6 +123,7 @@ func TestHandler_JoinTokenFallback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	require.NoError(t, mgr.SeedUnfinishedGame("g1"))
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(t, err, "upgrade без Authorization-заголовка должен проходить")
 	defer conn.Close(websocket.StatusInternalError, "test cleanup")
@@ -178,6 +179,7 @@ func TestHandler_JoinSendsJoinedWithColor(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	require.NoError(t, mgr.SeedUnfinishedGame("g-joined"))
 
 	dialJoin := func(token string) *websocket.Conn {
 		conn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -228,12 +230,12 @@ func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	state1 := readMessage(t, ctx, conn1)
 	require.Equal(t, "STATE", state1.Type)
 
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	state2 := readMessage(t, ctx, conn2)
 	require.Equal(t, "STATE", state2.Type)
@@ -245,10 +247,10 @@ func TestHandler_SecondJoinNotifiesFirst(t *testing.T) {
 
 // dialAndJoin подключается с уникальным токеном в Authorization-header.
 // Используется в тестах, где нужны два разных игрока.
-func dialAndJoin(t *testing.T, ctx context.Context, wsURL, gameID string) *websocket.Conn {
+func dialAndJoin(t *testing.T, ctx context.Context, mgr *game.Manager, wsURL, gameID string) *websocket.Conn {
 	t.Helper()
 	n := dialCounter.Add(1)
-	return dialAndJoinWithToken(t, ctx, wsURL, gameID, "tok-"+strconv.Itoa(int(n))+"-"+gameID)
+	return dialAndJoinWithToken(t, ctx, mgr, wsURL, gameID, "tok-"+strconv.Itoa(int(n))+"-"+gameID)
 }
 
 func readMessage(t *testing.T, ctx context.Context, conn *websocket.Conn) protocol.ServerMessage {
@@ -277,11 +279,11 @@ func TestHandler_RollForFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1) // STATE при JOIN
 
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -315,10 +317,10 @@ func TestHandler_RollForFirst_SendsFirstRollValues(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1)
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -356,10 +358,10 @@ func TestHandler_RollForFirst_WinnerRollsAgain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1)
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -410,11 +412,11 @@ func TestHandler_LegalMovesAfterRollForFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1) // STATE при JOIN
 
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -469,11 +471,11 @@ func TestHandler_Move_AppliesAndBroadcasts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1)
 
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -531,7 +533,7 @@ func TestHandler_EndTurn_RejectsWithPipsLeft(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	conn1, conn2 := playUntilFirstMove(t, ctx, mgr, wsURL)
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 
@@ -563,7 +565,7 @@ func TestHandler_AutoEndTurnOnEmptyLegalMoves(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	conn1, conn2 := playUntilFirstMove(t, ctx, mgr, wsURL)
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 
@@ -602,7 +604,7 @@ func TestHandler_Roll_StartsBlackTurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1, conn2 := playUntilFirstMove(t, ctx, wsURL)
+	conn1, conn2 := playUntilFirstMove(t, ctx, mgr, wsURL)
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 
@@ -661,19 +663,19 @@ func TestHandler_Reconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
+	conn1 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "t1")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	state1 := readMessage(t, ctx, conn1)
 	require.Equal(t, "STATE", state1.Type)
 	require.Equal(t, int8(15), state1.Board[23], "initial: 15 белых на 24")
 
-	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t1")
+	conn2 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "t1")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	state2 := readMessage(t, ctx, conn2)
 	require.Equal(t, "STATE", state2.Type)
 	require.Equal(t, int8(15), state2.Board[23], "реконнект: тот же initial board")
 
-	conn3 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "t2")
+	conn3 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "t2")
 	defer conn3.Close(websocket.StatusInternalError, "test cleanup")
 	state3 := readMessage(t, ctx, conn3)
 	require.Equal(t, "STATE", state3.Type)
@@ -704,9 +706,9 @@ func TestHandler_Reconnect_SendsLegalMovesOnOwnTurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	_ = readMessage(t, ctx, conn1) // STATE при JOIN
-	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	conn2 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -729,7 +731,7 @@ func TestHandler_Reconnect_SendsLegalMovesOnOwnTurn(t *testing.T) {
 
 	// White обрывается и реконнектится тем же токеном — его ход в самом разгаре.
 	conn1.Close(websocket.StatusNormalClosure, "reconnect")
-	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1b := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
 
 	st := readMessage(t, ctx, conn1b)
@@ -765,9 +767,9 @@ func TestHandler_Reconnect_AfterOpening_SendsFirstRoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	_ = readMessage(t, ctx, conn1)
-	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	conn2 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2)
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -782,7 +784,7 @@ func TestHandler_Reconnect_AfterOpening_SendsFirstRoll(t *testing.T) {
 	_ = readMessage(t, ctx, conn2)
 
 	conn1.Close(websocket.StatusNormalClosure, "reload")
-	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1b := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
 
 	st := readMessage(t, ctx, conn1b)
@@ -810,8 +812,9 @@ func readOpponentNotify(t *testing.T, ctx context.Context, conn *websocket.Conn)
 //
 // Съедает ответное JOINED, чтобы тесты дальше читали с STATE — так
 // сценарии, которым цвет не важен, не зашумляются лишним readMessage.
-func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, token string) *websocket.Conn {
+func dialAndJoinWithToken(t *testing.T, ctx context.Context, mgr *game.Manager, wsURL, gameID, token string) *websocket.Conn {
 	t.Helper()
+	require.NoError(t, mgr.SeedUnfinishedGame(gameID))
 	opts := &websocket.DialOptions{
 		HTTPHeader: http.Header{
 			"Authorization": []string{"Bearer " + token},
@@ -832,11 +835,11 @@ func dialAndJoinWithToken(t *testing.T, ctx context.Context, wsURL, gameID, toke
 // затем победитель (white) делает свой ROLL и первый ход 24→19 пипсом 5.
 // Возвращает соединения готовые к следующему сообщению белого.
 // Соответствует rng[4,2, 4,2]: розыгрыш 5:3 (white wins) + ROLL белого 5:3.
-func playUntilFirstMove(t *testing.T, ctx context.Context, wsURL string) (*websocket.Conn, *websocket.Conn) {
+func playUntilFirstMove(t *testing.T, ctx context.Context, mgr *game.Manager, wsURL string) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	_ = readMessage(t, ctx, conn1)
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1")
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1")
 	_ = readMessage(t, ctx, conn2)
 	_, _ = readOpponentNotify(t, ctx, conn1)
 
@@ -879,11 +882,11 @@ func TestHandler_Chat_BroadcastsToBothPlayers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn1) // STATE
 
-	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	conn2 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -917,9 +920,9 @@ func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	_ = readMessage(t, ctx, conn1) // STATE
-	conn2 := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tB")
+	conn2 := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tB")
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE
 	_, _ = readOpponentNotify(t, ctx, conn1)
@@ -933,7 +936,7 @@ func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
 	// White рвёт соединение и возвращается тем же токеном. Игра остаётся
 	// активной (black на связи), история чата — в live-объекте.
 	conn1.Close(websocket.StatusNormalClosure, "reconnect")
-	conn1b := dialAndJoinWithToken(t, ctx, wsURL, "g1", "tW")
+	conn1b := dialAndJoinWithToken(t, ctx, mgr, wsURL, "g1", "tW")
 	defer conn1b.Close(websocket.StatusInternalError, "test cleanup")
 
 	st := readMessage(t, ctx, conn1b)
@@ -944,6 +947,32 @@ func TestHandler_Chat_HistorySentOnReconnect(t *testing.T) {
 	require.Len(t, hist.Chat, 1)
 	require.Equal(t, "white", hist.Chat[0].Sender)
 	require.Equal(t, "до связи", hist.Chat[0].Text)
+}
+
+// Card #29 / SPEC §2 card #31 — WS JOIN for a missing id → GAME_NOT_FOUND.
+func TestHandler_Join_MissingGame_ReturnsGAME_NOT_FOUND(t *testing.T) {
+	mgr := game.NewManager()
+	srv := httptest.NewServer(ws.NewHandler(mgr))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	opts := &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer stale-tok"}},
+	}
+	conn, _, err := websocket.Dial(ctx, wsURL, opts)
+	require.NoError(t, err)
+	defer conn.Close(websocket.StatusInternalError, "test cleanup")
+
+	raw, err := json.Marshal(protocol.ClientMessage{Type: "JOIN", GameID: "deleted-id"})
+	require.NoError(t, err)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, raw))
+
+	msg := readMessage(t, ctx, conn)
+	require.Equal(t, "ERROR", msg.Type)
+	require.Equal(t, "GAME_NOT_FOUND", msg.Code)
 }
 
 // TestHandler_Resign_BroadcastsGameOverKoks — клиент шлёт RESIGN; сервер
@@ -959,10 +988,10 @@ func TestHandler_Resign_BroadcastsGameOverKoks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	conn1 := dialAndJoin(t, ctx, wsURL, "g1") // white
+	conn1 := dialAndJoin(t, ctx, mgr, wsURL, "g1") // white
 	defer conn1.Close(websocket.StatusInternalError, "test cleanup")
-	_ = readMessage(t, ctx, conn1)            // STATE при JOIN
-	conn2 := dialAndJoin(t, ctx, wsURL, "g1") // black
+	_ = readMessage(t, ctx, conn1)                 // STATE при JOIN
+	conn2 := dialAndJoin(t, ctx, mgr, wsURL, "g1") // black
 	defer conn2.Close(websocket.StatusInternalError, "test cleanup")
 	_ = readMessage(t, ctx, conn2) // STATE при JOIN
 	_, _ = readOpponentNotify(t, ctx, conn1)

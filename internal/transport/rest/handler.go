@@ -46,6 +46,7 @@ func NewHandler(mgr *game.Manager, authStore auth.Store) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/games", h.handleCreate)
 	mux.HandleFunc("POST /api/games/{id}/join", h.handleJoin)
+	mux.HandleFunc("DELETE /api/games/{id}", h.handleCancel)
 	mux.HandleFunc("POST /api/register", h.handleRegister)
 	mux.HandleFunc("POST /api/login", h.handleLogin)
 	mux.HandleFunc("GET /api/me", h.handleMe)
@@ -101,6 +102,32 @@ func (h *Handler) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, credentialsResponse{GameID: gameID, Token: token})
+}
+
+// handleCancel — DELETE /api/games/{id}: creator cancels an unfinished game
+// (card #29 / SPEC §2 [NEW card #31]).
+func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
+	_, userID, ok := h.UserFromRequest(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	gameID := r.PathValue("id")
+	err := h.mgr.CancelGame(gameID, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, game.ErrGameNotFound):
+			http.Error(w, "game not found", http.StatusNotFound)
+		case errors.Is(err, game.ErrNotCreator):
+			http.Error(w, "forbidden", http.StatusForbidden)
+		case errors.Is(err, game.ErrGameFinished):
+			http.Error(w, "game finished", http.StatusConflict)
+		default:
+			http.Error(w, "cancel failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
