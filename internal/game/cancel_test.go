@@ -192,3 +192,49 @@ func TestManager_CancelGame_DoesNotEmitGAME_OVER(t *testing.T) {
 	require.Equal(t, "GAME_NOT_FOUND", msgs[0].Code)
 	require.NotEqual(t, "GAME_OVER", msgs[0].Type)
 }
+
+// Card #29 / Code Review edge: WS still holds live *Game after CancelGame.
+// Resign / Roll / HandleMove / EndTurn must not resurrect the row, record
+// stats, emit GAME_OVER, or finish the in-memory state.
+func TestManager_CancelGame_LiveSeatActions_DoNotResurrectOrRecordStats(t *testing.T) {
+	rec := &recordingStats{}
+	m := NewManager()
+	m.SetStatsRecorder(rec)
+	gameID, whiteTok, err := m.CreateGame("Alice", "user-w")
+	require.NoError(t, err)
+	blackTok, err := m.JoinByID(gameID, "Bob", "user-b")
+	require.NoError(t, err)
+
+	white := &recordingConn{}
+	black := &recordingConn{}
+	_, g, err := m.JoinGame(gameID, whiteTok, white)
+	require.NoError(t, err)
+	_, _, err = m.JoinGame(gameID, blackTok, black)
+	require.NoError(t, err)
+	white.reset()
+	black.reset()
+
+	require.NoError(t, m.CancelGame(gameID, "user-w"))
+
+	// Resign is the critical zombie path: finishes + maybePersist SaveGame + stats.
+	g.Resign(domain.White)
+	_, ok := m.storage.LoadGame(gameID)
+	require.False(t, ok, "post-cancel Resign must not SaveGame-resurrect the deleted id")
+	require.Empty(t, rec.Calls(), "post-cancel Resign must not ApplyFinishedGame")
+	require.NotEqual(t, domain.StatusFinished, g.State.Status,
+		"post-cancel Resign must not finish the live *Game")
+
+	require.ErrorIs(t, g.Roll(domain.White), ErrGameNotFound)
+	require.ErrorIs(t, g.HandleMove(domain.White, 24, 23), ErrGameNotFound)
+	require.ErrorIs(t, g.EndTurn(domain.White), ErrGameNotFound)
+	require.ErrorIs(t, g.RollForFirst(domain.White), ErrGameNotFound)
+
+	_, ok = m.storage.LoadGame(gameID)
+	require.False(t, ok, "post-cancel mutate paths must not resurrect the deleted id")
+	require.Empty(t, rec.Calls())
+	for _, c := range []*recordingConn{white, black} {
+		for _, msg := range c.Messages() {
+			require.NotEqual(t, "GAME_OVER", msg.Type)
+		}
+	}
+}

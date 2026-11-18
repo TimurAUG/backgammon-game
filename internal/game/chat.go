@@ -49,6 +49,9 @@ func (g *Game) PostChat(c domain.Color, text string) {
 	g.mu.Lock()
 	defer g.maybePersist()
 	defer g.mu.Unlock()
+	if g.cancelled {
+		return
+	}
 	m := ChatMessage{Sender: c, Text: text}
 	g.chat = append(g.chat, m)
 	if len(g.chat) > maxChatHistory {

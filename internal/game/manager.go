@@ -90,13 +90,18 @@ type Game struct {
 
 	// stats — optional; set from Manager when creating/loading (card #22).
 	stats StatsRecorder
+
+	// cancelled — set by Manager.CancelGame. Live WS seats may still hold this
+	// *Game; mutate paths must refuse and must not SaveGame / record stats
+	// (card #29 / Code Review).
+	cancelled bool
 }
 
 // maybePersist сохраняет текущее состояние в Storage, если он задан.
 // Обычно вызывается через defer после g.mu.Unlock() (LIFO порядок defer'ов
 // гарантирует, что Unlock сработает раньше).
 func (g *Game) maybePersist() {
-	if g.storage == nil {
+	if g.cancelled || g.storage == nil {
 		return
 	}
 	_ = g.storage.SaveGame(g)
@@ -212,6 +217,9 @@ func (g *Game) HandleMove(c domain.Color, from, to uint8) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -314,6 +322,9 @@ func (g *Game) Roll(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -349,6 +360,9 @@ func (g *Game) EndTurn(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.State.Turn != c {
 		return ErrNotYourTurn
 	}
@@ -393,6 +407,9 @@ func (g *Game) Resign(c domain.Color) {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return
+	}
 	if g.State.Status == domain.StatusFinished {
 		return
 	}
@@ -411,7 +428,7 @@ func (g *Game) Resign(c domain.Color) {
 // recordFinishedStatsLocked applies seat user counters once per finished game.
 // Must be called with g.mu held. Card #22.
 func (g *Game) recordFinishedStatsLocked(winner domain.Color) {
-	if g.statsRecorded {
+	if g.cancelled || g.statsRecorded {
 		return
 	}
 	whiteUID := g.userIDs[domain.White]
@@ -448,6 +465,9 @@ func (g *Game) RollForFirst(c domain.Color) error {
 	defer g.maybePersist()
 	defer g.mu.Unlock()
 
+	if g.cancelled {
+		return ErrGameNotFound
+	}
 	if g.rolledForFirst[c] {
 		return nil
 	}
@@ -943,6 +963,11 @@ func (m *Manager) CancelGame(gameID, userID string) error {
 	conns := [2]Conn{g.conns[domain.White], g.conns[domain.Black]}
 	g.conns[domain.White] = nil
 	g.conns[domain.Black] = nil
+	// Detach live *Game from persistence/stats so a seat that keeps the
+	// pointer cannot SaveGame-resurrect or record finished stats (card #29).
+	g.cancelled = true
+	g.storage = nil
+	g.stats = nil
 	g.mu.Unlock()
 
 	delete(m.active, gameID)
