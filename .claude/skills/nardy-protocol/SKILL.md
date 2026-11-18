@@ -153,6 +153,8 @@ description: Референс WebSocket-протокола между клиен
 
 Розыгрыш определяет **только очередность**. После него `status == "waitingForRoll"`, `turn ==` победитель, `dice` пуст, `LEGAL_MOVES` **не** шлётся. Победитель делает обычный `ROLL` — и только тогда приходят `STATE` (`waitingForMove`) + `LEGAL_MOVES`. Значения розыгрыша в кубики хода не переносятся.
 
+Значения персистятся с партией. При (ре)JOIN, если розыгрыш уже состоялся, сервер досылает `FIRST_ROLL` после `STATE` (+ `LEGAL_MOVES` / `CHAT_HISTORY`) — иначе клиент зависает в waiting-first-roll: повторный `ROLL_FOR_FIRST` на сервере no-op (card #25).
+
 ```json
 { "type": "FIRST_ROLL", "firstRoll": { "white": 1-6, "black": 1-6 } }
 ```
@@ -163,6 +165,8 @@ description: Референс WebSocket-протокола между клиен
 { "type": "OPPONENT_JOINED", "name": "string" }
 { "type": "OPPONENT_LEFT" }
 ```
+
+При успешном JOIN, если соперник уже подключён: `OPPONENT_JOINED`, затем свежий `STATE` с nicks (card #25 — nicks только из `STATE`).
 
 ### `GAME_OVER`
 
@@ -244,7 +248,7 @@ Session cookie на WS **не** требуется — достаточно seat
   1. `STATE` — обоим клиентам;
   2. `LEGAL_MOVES` — только игроку, чей ход (если `status == "waitingForMove"`).
 - Клиент **не реконструирует** состояние частично. Только из `STATE`.
-- На реконнект клиент шлёт `JOIN` с тем же `gameId`/`token` и получает `JOINED` со своим прежним цветом + текущий `STATE` (+ `LEGAL_MOVES` если его ход).
+- На реконнект клиент шлёт `JOIN` с тем же `gameId`/`token` и получает `JOINED` со своим прежним цветом + текущий `STATE` (+ `LEGAL_MOVES` если его ход) (+ `FIRST_ROLL` если розыгрыш первого хода уже состоялся).
 - Сервер игнорирует команды от игрока, чей `turn != свой цвет` (отвечает `NOT_YOUR_TURN`).
 - Поле `isFirstMove[color]` сбрасывается в `false` после первого END_TURN этого цвета.
 - При JOIN/реконнекте, если история чата непуста, сервер досылает `CHAT_HISTORY` после `STATE` (+ `LEGAL_MOVES`, если ход игрока). История переживает рестарт сервера (persistence).

@@ -80,6 +80,8 @@ export function applyServerMessage(msg: ServerMessage): void {
       gameState.nicks = msg.nicks
       gameState.dice = msg.dice ?? null
       gameState.started = true
+      // Card #25: never clear firstRoll on STATE — nick refresh / reconnect
+      // STATE must keep the opening result so ActionBar leaves waiting-first-roll.
       break
     case 'LEGAL_MOVES':
       gameState.legalMoves = msg.moves
